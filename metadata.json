@@ -1,0 +1,8 @@
+{
+  "name": "RioMais - Gestão de contratos",
+  "description": "Sistema integrado de Gestão de Contratos (CLM), Governança de Fornecedores, Inteligência Jurídica e Controle de Vencimentos.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
