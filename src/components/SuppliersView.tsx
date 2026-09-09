@@ -1,21 +1,30 @@
 import React, { useState } from 'react';
-import { Supplier } from '../types';
+import { Supplier, UserRole } from '../types';
+import { ConfirmationModal } from './ConfirmationModal';
 
 interface SuppliersViewProps {
   suppliers: Supplier[];
   onAddSupplier: (newSupplier: Supplier) => void;
+  onDeleteSupplier?: (supplierId: string) => void;
   onSelectSupplierContracts?: (supplierId: string) => void;
+  currentRole?: UserRole;
 }
 
 export const SuppliersView: React.FC<SuppliersViewProps> = ({
   suppliers,
   onAddSupplier,
+  onDeleteSupplier,
   onSelectSupplierContracts,
+  currentRole = 'administrador',
 }) => {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('todos');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Deletion Confirmation State
+  const [supplierToDelete, setSupplierToDelete] = useState<Supplier | null>(null);
+  const [isDeletingSupplier, setIsDeletingSupplier] = useState(false);
 
   // New Supplier Form State
   const [cnpj, setCnpj] = useState('');
@@ -156,14 +165,17 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({
               <span>Exportar CSV</span>
             </button>
 
-            <button
-              type="button"
-              onClick={() => setIsDrawerOpen(true)}
-              className="h-9 px-4 rounded-xl bg-[#0051d5] hover:bg-[#003ea8] active:scale-[0.98] text-white text-[13px] font-bold transition-all flex items-center gap-1.5 shadow-md"
-            >
-              <span className="material-symbols-outlined text-[18px]">domain_add</span>
-              <span>Novo Fornecedor</span>
-            </button>
+            {currentRole !== 'visualizador' && (
+              <button
+                type="button"
+                id="btn-new-supplier"
+                onClick={() => setIsDrawerOpen(true)}
+                className="h-9 px-4 rounded-xl bg-[#0051d5] hover:bg-[#003ea8] active:scale-[0.98] text-white text-[13px] font-bold transition-all flex items-center gap-1.5 shadow-md"
+              >
+                <span className="material-symbols-outlined text-[18px]">domain_add</span>
+                <span>Novo Fornecedor</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -401,9 +413,10 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({
 
                     {/* Ações */}
                     <td className="py-3 px-4 text-right">
-                      <div className="flex items-center justify-end gap-1">
+                      <div className="flex items-center justify-end gap-1.5">
                         <button
                           type="button"
+                          id={`btn-view-supplier-${supplier.id}`}
                           onClick={() => {
                             if (onSelectSupplierContracts) {
                               onSelectSupplierContracts(supplier.id);
@@ -415,6 +428,18 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({
                         >
                           Ver Contratos
                         </button>
+
+                        {currentRole === 'administrador' && (
+                          <button
+                            type="button"
+                            id={`btn-delete-supplier-${supplier.id}`}
+                            onClick={() => setSupplierToDelete(supplier)}
+                            className="p-1.5 rounded-lg text-gray-400 hover:text-[#ba1a1a] hover:bg-red-50 transition-colors"
+                            title="Excluir Fornecedor (Exclusivo Administrador)"
+                          >
+                            <span className="material-symbols-outlined text-[18px]">delete</span>
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -661,6 +686,61 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* Confirmation Modal for Supplier Deletion */}
+      <ConfirmationModal
+        isOpen={!!supplierToDelete}
+        onClose={() => setSupplierToDelete(null)}
+        onConfirm={() => {
+          if (!supplierToDelete) return;
+          setIsDeletingSupplier(true);
+          setTimeout(() => {
+            if (onDeleteSupplier) {
+              onDeleteSupplier(supplierToDelete.id);
+            }
+            showToast(`Fornecedor ${supplierToDelete.razaoSocial} excluído com sucesso.`);
+            setIsDeletingSupplier(false);
+            setSupplierToDelete(null);
+          }, 300);
+        }}
+        isLoading={isDeletingSupplier}
+        title="Excluir Fornecedor Cadastrado"
+        message={
+          <>
+            Você tem certeza de que deseja remover o cadastro da empresa{' '}
+            <strong className="text-slate-900 font-semibold">
+              {supplierToDelete?.razaoSocial}
+            </strong>
+            ?
+          </>
+        }
+        confirmText="Sim, Excluir Fornecedor"
+        cancelText="Cancelar"
+        variant="danger"
+        icon="domain_disabled"
+        destructiveNotice={
+          supplierToDelete && supplierToDelete.activeContractsCount > 0
+            ? `Alerta Crítico: Esta empresa possui ${supplierToDelete.activeContractsCount} contrato(s) ativo(s) registrado(s) no sistema, somando volume de R$ ${supplierToDelete.totalFinancialVolume.toLocaleString('pt-BR')},00. A exclusão afetará a rastreabilidade e histórico dos contratos associados.`
+            : 'Atenção: A exclusão removerá permanentemente os dados societários, contatos dos representantes e certidões fiscais deste fornecedor.'
+        }
+        itemDetails={
+          supplierToDelete
+            ? [
+                { label: 'Razão Social', value: supplierToDelete.razaoSocial, highlighted: true },
+                { label: 'CNPJ', value: supplierToDelete.cnpj, highlighted: true },
+                { label: 'Nome Fantasia', value: supplierToDelete.nomeFantasia },
+                {
+                  label: 'Contratos Ativos',
+                  value: `${supplierToDelete.activeContractsCount} instrumentos vinculados`,
+                },
+                {
+                  label: 'Volume Financeiro Total',
+                  value: `R$ ${supplierToDelete.totalFinancialVolume.toLocaleString('pt-BR')},00`,
+                },
+              ]
+            : []
+        }
+      />
 
       {/* Global Toast */}
       {toastMessage && (

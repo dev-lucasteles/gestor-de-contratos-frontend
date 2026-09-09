@@ -1,13 +1,16 @@
 import React, { useState } from 'react';
-import { Contract, Supplier, ContractStatus } from '../types';
+import { Contract, Supplier, ContractStatus, UserRole } from '../types';
+import { ConfirmationModal } from './ConfirmationModal';
 
 interface ContractsListViewProps {
   contracts: Contract[];
   suppliers: Supplier[];
   onSelectContract: (contract: Contract) => void;
   onAddNewContract: (newContract: Partial<Contract>) => void;
+  onDeleteContract?: (contractId: string) => void;
   isDrawerOpen: boolean;
   setIsDrawerOpen: (open: boolean) => void;
+  currentRole?: UserRole;
 }
 
 export const ContractsListView: React.FC<ContractsListViewProps> = ({
@@ -15,13 +18,19 @@ export const ContractsListView: React.FC<ContractsListViewProps> = ({
   suppliers,
   onSelectContract,
   onAddNewContract,
+  onDeleteContract,
   isDrawerOpen,
   setIsDrawerOpen,
+  currentRole = 'administrador',
 }) => {
   const [activeFilterTab, setActiveFilterTab] = useState<'todos' | ContractStatus>('todos');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedSupplierFilter, setSelectedSupplierFilter] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Confirmation Modal State for Contract Deletion
+  const [contractToDelete, setContractToDelete] = useState<Contract | null>(null);
+  const [isDeletingContract, setIsDeletingContract] = useState(false);
 
   // New Contract Form State
   const [newTitle, setNewTitle] = useState('');
@@ -32,6 +41,7 @@ export const ContractsListView: React.FC<ContractsListViewProps> = ({
   const [newTotalValue, setNewTotalValue] = useState('180000');
   const [newPeriodicity, setNewPeriodicity] = useState<'mensal' | 'anual' | 'demanda' | 'plurianual'>('mensal');
   const [newIsSigned, setNewIsSigned] = useState(true);
+  const [newNotificationEmail, setNewNotificationEmail] = useState('gestor.contratos@empresa.com.br');
   const [isUploading, setIsUploading] = useState(false);
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
   const [isAiFilling, setIsAiFilling] = useState(false);
@@ -73,6 +83,7 @@ export const ContractsListView: React.FC<ContractsListViewProps> = ({
       setNewTitle('Fornecimento e Licenciamento de Software Cloud');
       setNewSupplierId('aws');
       setNewTotalValue('360000');
+      setNewNotificationEmail('gestor.cloud@empresa.com.br');
       setUploadedFileName('Minuta_AWS_Cloud_Assinada_v2.pdf');
       setNewIsSigned(true);
       showToast('Campos preenchidos com precisão pela IA!');
@@ -106,15 +117,18 @@ export const ContractsListView: React.FC<ContractsListViewProps> = ({
       hasOcr: true,
       progressPercent: 2,
       isSigned: newIsSigned,
+      notificationEmail: newNotificationEmail.trim() || 'gestor.contratos@empresa.com.br',
+      notifyOnExpiration: true,
+      notifyOnStatusChange: true,
       signers: [
         {
           id: 's-auto',
-          name: 'Carlos Mendonça',
-          role: 'Diretor de Operações',
+          name: 'Lucas Teles',
+          role: 'Diretor Jurídico & CLO',
           cpf: '***.382.918-**',
           signed: newIsSigned,
           signedAt: newIsSigned ? 'Hoje às 15:00' : undefined,
-          avatarInitials: 'CM',
+          avatarInitials: 'LT',
         },
       ],
       attachments: uploadedFileName
@@ -183,14 +197,17 @@ export const ContractsListView: React.FC<ContractsListViewProps> = ({
               <span>Exportar CSV</span>
             </button>
 
-            <button
-              type="button"
-              onClick={() => setIsDrawerOpen(true)}
-              className="h-10 px-4 rounded-xl bg-[#0051d5] hover:bg-[#003ea8] active:scale-[0.98] text-white text-[13px] font-semibold transition-all flex items-center gap-2 shadow-lg shadow-[#0051d5]/30"
-            >
-              <span className="material-symbols-outlined text-[18px]">add</span>
-              <span>Novo Instrumento</span>
-            </button>
+            {currentRole !== 'visualizador' && (
+              <button
+                type="button"
+                id="btn-new-contract-list"
+                onClick={() => setIsDrawerOpen(true)}
+                className="h-10 px-4 rounded-xl bg-[#0051d5] hover:bg-[#003ea8] active:scale-[0.98] text-white text-[13px] font-semibold transition-all flex items-center gap-2 shadow-lg shadow-[#0051d5]/30"
+              >
+                <span className="material-symbols-outlined text-[18px]">add</span>
+                <span>Novo Instrumento</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -520,6 +537,7 @@ export const ContractsListView: React.FC<ContractsListViewProps> = ({
                       <div className="flex items-center justify-end gap-1.5">
                         <button
                           type="button"
+                          id={`btn-view-contract-${contract.id}`}
                           onClick={(e) => {
                             e.stopPropagation();
                             onSelectContract(contract);
@@ -532,15 +550,31 @@ export const ContractsListView: React.FC<ContractsListViewProps> = ({
 
                         <button
                           type="button"
+                          id={`btn-download-contract-${contract.id}`}
                           onClick={(e) => {
                             e.stopPropagation();
                             showToast(`Baixando PDF assinado de ${contract.code}...`);
                           }}
-                          className="p-1.5 rounded-lg text-gray-500 hover:text-[#0b1c30] hover:bg-gray-100"
+                          className="p-1.5 rounded-lg text-gray-500 hover:text-[#0b1c30] hover:bg-gray-100 transition-colors"
                           title="Baixar PDF"
                         >
                           <span className="material-symbols-outlined text-[18px]">download</span>
                         </button>
+
+                        {currentRole === 'administrador' && (
+                          <button
+                            type="button"
+                            id={`btn-delete-contract-${contract.id}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setContractToDelete(contract);
+                            }}
+                            className="p-1.5 rounded-lg text-gray-400 hover:text-[#ba1a1a] hover:bg-red-50 transition-colors"
+                            title="Excluir contrato (Exclusivo Administrador)"
+                          >
+                            <span className="material-symbols-outlined text-[18px]">delete</span>
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -757,6 +791,36 @@ export const ContractsListView: React.FC<ContractsListViewProps> = ({
                 </div>
               </div>
 
+              {/* Campo E-mail de notificação */}
+              <div className="flex flex-col gap-1.5 p-3.5 bg-[#f8fafc] rounded-2xl border border-gray-200/80">
+                <label htmlFor="input-new-notification-email" className="text-[12px] font-bold text-[#0b1c30] flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-[16px] text-[#0051d5]">forward_to_inbox</span>
+                    E-mail de notificação
+                  </span>
+                  <span className="text-[10px] text-[#0051d5] font-semibold bg-blue-50 px-2 py-0.5 rounded-md border border-blue-200/60">
+                    Alertas Automáticos
+                  </span>
+                </label>
+                <div className="relative">
+                  <input
+                    id="input-new-notification-email"
+                    type="email"
+                    required
+                    value={newNotificationEmail}
+                    onChange={(e) => setNewNotificationEmail(e.target.value)}
+                    placeholder="ex: gestor.contratos@empresa.com.br"
+                    className="w-full h-10 px-3.5 pl-9 rounded-xl border border-gray-300 text-[13px] text-[#0b1c30] focus:outline-none focus:ring-2 focus:ring-[#0051d5]/20 focus:border-[#0051d5] bg-white font-medium"
+                  />
+                  <span className="material-symbols-outlined text-[18px] text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none">
+                    alternate_email
+                  </span>
+                </div>
+                <p className="text-[10px] text-gray-500 leading-tight mt-0.5">
+                  Este endereço receberá avisos automatizados de vencimento de vigência e atualizações de status.
+                </p>
+              </div>
+
               {/* Checkbox Assinado */}
               <div className="p-3 bg-[#eff4ff]/60 rounded-xl border border-[#dce9ff] flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -797,6 +861,54 @@ export const ContractsListView: React.FC<ContractsListViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* Generic Confirmation Modal for Contract Deletion */}
+      <ConfirmationModal
+        isOpen={!!contractToDelete}
+        onClose={() => setContractToDelete(null)}
+        onConfirm={() => {
+          if (!contractToDelete) return;
+          setIsDeletingContract(true);
+          setTimeout(() => {
+            if (onDeleteContract) {
+              onDeleteContract(contractToDelete.id);
+            }
+            showToast(`Contrato ${contractToDelete.code} excluído com sucesso.`);
+            setIsDeletingContract(false);
+            setContractToDelete(null);
+          }, 300);
+        }}
+        isLoading={isDeletingContract}
+        title="Excluir Instrumento Contratual"
+        message={
+          <>
+            Tem certeza de que deseja remover o contrato{' '}
+            <strong className="text-slate-900 font-mono font-bold">
+              {contractToDelete?.code}
+            </strong>
+            ? Esta operação revoga o cadastro e remove o instrumento da esteira de gestão ativa.
+          </>
+        }
+        confirmText="Sim, Excluir Contrato"
+        cancelText="Cancelar"
+        variant="danger"
+        icon="delete_forever"
+        destructiveNotice="Atenção: A exclusão é irreversível. Todos os termos aditivos, histórico de alertas e parâmetros de SLA vinculados serão permanentemente desativados."
+        itemDetails={
+          contractToDelete
+            ? [
+                { label: 'Código do Contrato', value: contractToDelete.code, highlighted: true },
+                { label: 'Objeto / Título', value: contractToDelete.title },
+                { label: 'Fornecedor', value: contractToDelete.supplierName },
+                {
+                  label: 'Valor Global',
+                  value: `R$ ${contractToDelete.totalValue.toLocaleString('pt-BR')},00`,
+                },
+                { label: 'Data de Término', value: contractToDelete.endDate },
+              ]
+            : []
+        }
+      />
 
       {/* Global Toast */}
       {toastMessage && (

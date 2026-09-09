@@ -1,16 +1,31 @@
-import React, { useState } from 'react';
-import { Contract } from '../types';
+import React, { useState, useEffect } from 'react';
+import { Contract, ContractStatus, UserRole } from '../types';
+import { ConfirmationModal } from './ConfirmationModal';
 
 interface ContractDetailViewProps {
   contract: Contract;
   onBack: () => void;
-  onEdit: (contract: Contract) => void;
+  onEdit?: (contract: Contract) => void;
+  onDeleteContract?: (contractId: string) => void;
+  onViewAuditTrail?: (contractCode: string) => void;
+  onUpdateContract?: (updatedContract: Contract) => void;
+  onSimulateAlert?: (
+    contract: Contract,
+    triggerType: 'vencimento' | 'mudanca_status',
+    options?: { newStatus?: ContractStatus; daysRemaining?: number; customEmail?: string }
+  ) => void;
+  currentRole?: UserRole;
 }
 
 export const ContractDetailView: React.FC<ContractDetailViewProps> = ({
   contract,
   onBack,
   onEdit,
+  onDeleteContract,
+  onViewAuditTrail,
+  onUpdateContract,
+  onSimulateAlert,
+  currentRole,
 }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [zoomLevel, setZoomLevel] = useState(100);
@@ -19,10 +34,72 @@ export const ContractDetailView: React.FC<ContractDetailViewProps> = ({
   const [aiSummary, setAiSummary] = useState(contract.aiInsights.executiveSummary);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [showOptionsDropdown, setShowOptionsDropdown] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [activeTabPrompt, setActiveTabPrompt] = useState<'briefing' | 'qa'>('briefing');
   const [aiQuestion, setAiQuestion] = useState('');
   const [aiAnswer, setAiAnswer] = useState<string | null>(null);
   const [isAskingAi, setIsAskingAi] = useState(false);
+
+  // Notification email & alerts state
+  const [notificationEmail, setNotificationEmail] = useState(
+    contract.notificationEmail || 'gestor.contratos@empresa.com.br'
+  );
+  const [notifyOnExpiration, setNotifyOnExpiration] = useState(
+    contract.notifyOnExpiration ?? true
+  );
+  const [notifyOnStatusChange, setNotifyOnStatusChange] = useState(
+    contract.notifyOnStatusChange ?? true
+  );
+  const [isSavingNotification, setIsSavingNotification] = useState(false);
+  const [isEmailChanged, setIsEmailChanged] = useState(false);
+  const [simulatedStatus, setSimulatedStatus] = useState<ContractStatus>(
+    contract.status === 'expirado' ? 'vigente' : 'expirado'
+  );
+  const [simulatedDaysRemaining, setSimulatedDaysRemaining] = useState(
+    contract.remainingDays || 15
+  );
+
+  useEffect(() => {
+    setNotificationEmail(contract.notificationEmail || 'gestor.contratos@empresa.com.br');
+    setNotifyOnExpiration(contract.notifyOnExpiration ?? true);
+    setNotifyOnStatusChange(contract.notifyOnStatusChange ?? true);
+    setIsEmailChanged(false);
+  }, [contract.id, contract.notificationEmail]);
+
+  const handleSaveNotificationSettings = () => {
+    if (!notificationEmail.trim()) {
+      showToast('Por favor, informe um endereço de e-mail de notificação válido.');
+      return;
+    }
+    setIsSavingNotification(true);
+    const updatedContract: Contract = {
+      ...contract,
+      notificationEmail: notificationEmail.trim(),
+      notifyOnExpiration,
+      notifyOnStatusChange,
+    };
+    if (onUpdateContract) {
+      onUpdateContract(updatedContract);
+    }
+    setTimeout(() => {
+      setIsSavingNotification(false);
+      setIsEmailChanged(false);
+      showToast('E-mail de notificação salvo e ativado para este contrato!');
+    }, 350);
+  };
+
+  const handleSimulateAlertTrigger = (triggerType: 'vencimento' | 'mudanca_status') => {
+    if (onSimulateAlert) {
+      onSimulateAlert(contract, triggerType, {
+        newStatus: simulatedStatus,
+        daysRemaining: simulatedDaysRemaining,
+        customEmail: notificationEmail.trim(),
+      });
+    } else {
+      showToast(`Disparo de alerta (${triggerType}) simulado com sucesso!`);
+    }
+  };
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -152,71 +229,128 @@ export const ContractDetailView: React.FC<ContractDetailViewProps> = ({
               <span>Compartilhar</span>
             </button>
 
-            <button
-              type="button"
-              onClick={() => onEdit(contract)}
-              className="h-9 px-3.5 rounded-xl bg-[#eff4ff] text-[#0051d5] text-[13px] font-semibold border border-[#dce9ff] hover:bg-[#dce9ff] transition-all flex items-center gap-1.5"
-            >
-              <span className="material-symbols-outlined text-[18px]">edit</span>
-              <span>Editar Metadados</span>
-            </button>
-
-            {/* More Menu Dropdown */}
-            <div className="relative">
+            {currentRole !== 'visualizador' && (
               <button
                 type="button"
-                onClick={() => setShowOptionsDropdown(!showOptionsDropdown)}
-                className="h-9 w-9 rounded-xl bg-white text-gray-600 border border-[#e5eeff] hover:bg-[#eff4ff] shadow-sm transition-all flex items-center justify-center"
+                id="btn-trigger-alert-toolbar"
+                onClick={() => handleSimulateAlertTrigger('vencimento')}
+                className="h-9 px-3.5 rounded-xl bg-amber-50 text-amber-900 text-[13px] font-semibold border border-amber-200 hover:bg-amber-100 shadow-sm transition-all flex items-center gap-1.5"
+                title="Simular disparo de alerta transacional por e-mail"
               >
-                <span className="material-symbols-outlined text-[20px]">more_vert</span>
+                <span className="material-symbols-outlined text-[18px] text-amber-600">notifications_active</span>
+                <span>Simular Alerta E-mail</span>
               </button>
+            )}
 
-              {showOptionsDropdown && (
-                <div className="absolute right-0 mt-2 w-56 rounded-2xl bg-white shadow-2xl border border-[#e5eeff] p-1.5 z-50 animate-in fade-in">
-                  <button
-                    onClick={() => {
-                      showToast('Trilha de auditoria criptográfica exibida');
-                      setShowOptionsDropdown(false);
-                    }}
-                    className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[12px] text-gray-700 hover:bg-[#eff4ff] transition-colors text-left"
-                  >
-                    <span className="material-symbols-outlined text-[18px] text-gray-500">history</span>
-                    <span>Trilha de Auditoria</span>
-                  </button>
-                  <button
-                    onClick={() => {
-                      showToast('Iniciando minuta de 1º Termo Aditivo...');
-                      setShowOptionsDropdown(false);
-                    }}
-                    className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[12px] text-gray-700 hover:bg-[#eff4ff] transition-colors text-left"
-                  >
-                    <span className="material-symbols-outlined text-[18px] text-[#0051d5]">note_add</span>
-                    <span>Criar Termo Aditivo</span>
-                  </button>
-                  <button
-                    onClick={() => {
-                      showToast('Alertas configurados para 45, 30 e 15 dias');
-                      setShowOptionsDropdown(false);
-                    }}
-                    className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[12px] text-gray-700 hover:bg-[#eff4ff] transition-colors text-left"
-                  >
-                    <span className="material-symbols-outlined text-[18px] text-amber-500">notifications_active</span>
-                    <span>Ajustar Alertas</span>
-                  </button>
-                  <div className="my-1 border-t border-gray-100"></div>
-                  <button
-                    onClick={() => {
-                      showToast('Processo de rescisão aberto para análise jurídica.');
-                      setShowOptionsDropdown(false);
-                    }}
-                    className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[12px] text-[#ba1a1a] hover:bg-red-50 transition-colors text-left font-medium"
-                  >
-                    <span className="material-symbols-outlined text-[18px]">cancel</span>
-                    <span>Rescindir Contrato</span>
-                  </button>
-                </div>
-              )}
-            </div>
+            {onEdit && currentRole !== 'visualizador' && (
+              <button
+                type="button"
+                id="btn-edit-contract-detail"
+                onClick={() => onEdit(contract)}
+                className="h-9 px-3.5 rounded-xl bg-[#eff4ff] text-[#0051d5] text-[13px] font-semibold border border-[#dce9ff] hover:bg-[#dce9ff] transition-all flex items-center gap-1.5"
+              >
+                <span className="material-symbols-outlined text-[18px]">edit</span>
+                <span>Editar Metadados</span>
+              </button>
+            )}
+
+            {onDeleteContract && currentRole === 'administrador' && (
+              <button
+                type="button"
+                id="btn-delete-contract-detail"
+                onClick={() => setShowDeleteModal(true)}
+                className="h-9 px-3 rounded-xl bg-white text-[#ba1a1a] text-[13px] font-semibold border border-red-200 hover:bg-red-50 transition-all flex items-center gap-1.5"
+                title="Excluir Contrato (Exclusivo Administrador)"
+              >
+                <span className="material-symbols-outlined text-[18px]">delete</span>
+                <span className="hidden sm:inline">Excluir</span>
+              </button>
+            )}
+
+            {/* More Menu Dropdown - only shown if user has additional options available */}
+            {currentRole !== 'visualizador' && (
+              <div className="relative">
+                <button
+                  type="button"
+                  id="btn-more-options-detail"
+                  onClick={() => setShowOptionsDropdown(!showOptionsDropdown)}
+                  className="h-9 w-9 rounded-xl bg-white text-gray-600 border border-[#e5eeff] hover:bg-[#eff4ff] shadow-sm transition-all flex items-center justify-center"
+                >
+                  <span className="material-symbols-outlined text-[20px]">more_vert</span>
+                </button>
+
+                {showOptionsDropdown && (
+                  <div className="absolute right-0 mt-2 w-56 rounded-2xl bg-white shadow-2xl border border-[#e5eeff] p-1.5 z-50 animate-in fade-in">
+                    {currentRole === 'administrador' && (
+                      <button
+                        onClick={() => {
+                          setShowOptionsDropdown(false);
+                          if (onViewAuditTrail) {
+                            onViewAuditTrail(contract.code);
+                          } else {
+                            showToast(`Trilha de auditoria criptográfica de ${contract.code} exibida`);
+                          }
+                        }}
+                        className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[12px] text-gray-700 hover:bg-[#eff4ff] transition-colors text-left"
+                      >
+                        <span className="material-symbols-outlined text-[18px] text-[#0051d5]">history</span>
+                        <span>Trilha de Auditoria</span>
+                      </button>
+                    )}
+
+                    <button
+                      onClick={() => {
+                        showToast('Iniciando minuta de 1º Termo Aditivo...');
+                        setShowOptionsDropdown(false);
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[12px] text-gray-700 hover:bg-[#eff4ff] transition-colors text-left"
+                    >
+                      <span className="material-symbols-outlined text-[18px] text-[#0051d5]">note_add</span>
+                      <span>Criar Termo Aditivo</span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        showToast('Alertas configurados para 45, 30 e 15 dias');
+                        setShowOptionsDropdown(false);
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[12px] text-gray-700 hover:bg-[#eff4ff] transition-colors text-left"
+                    >
+                      <span className="material-symbols-outlined text-[18px] text-amber-500">notifications_active</span>
+                      <span>Ajustar Alertas</span>
+                    </button>
+
+                    {currentRole === 'administrador' && (
+                      <>
+                        <div className="my-1 border-t border-gray-100"></div>
+                        <button
+                          onClick={() => {
+                            showToast('Processo de rescisão aberto para análise jurídica.');
+                            setShowOptionsDropdown(false);
+                          }}
+                          className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[12px] text-[#ba1a1a] hover:bg-red-50 transition-colors text-left font-medium"
+                        >
+                          <span className="material-symbols-outlined text-[18px]">cancel</span>
+                          <span>Rescindir Contrato</span>
+                        </button>
+                        {onDeleteContract && (
+                          <button
+                            onClick={() => {
+                              setShowOptionsDropdown(false);
+                              setShowDeleteModal(true);
+                            }}
+                            className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[12px] text-[#ba1a1a] hover:bg-red-50 transition-colors text-left font-semibold"
+                          >
+                            <span className="material-symbols-outlined text-[18px]">delete</span>
+                            <span>Excluir Contrato</span>
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -321,8 +455,8 @@ export const ContractDetailView: React.FC<ContractDetailViewProps> = ({
               >
                 {/* Watermark */}
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-[0.03] select-none rotate-[-35deg]">
-                  <span className="text-[52px] font-black tracking-widest text-[#0051d5]">
-                    CONTRACTFLOW AUTHENTICATED
+                  <span className="text-[48px] font-black tracking-widest text-[#0051d5]">
+                    MAIS CONTRATOS • GRUPO RIOMAIS
                   </span>
                 </div>
 
@@ -344,7 +478,7 @@ export const ContractDetailView: React.FC<ContractDetailViewProps> = ({
                   </h2>
                   <div className="flex justify-between items-center text-[10px] text-gray-500 font-mono mt-1">
                     <span>CÓDIGO ÚNICO: {contract.code}</span>
-                    <span>ORIGEM: BRASIL - SP</span>
+                    <span>ORIGEM: BRASIL - RJ/SP</span>
                   </div>
                 </div>
 
@@ -352,7 +486,7 @@ export const ContractDetailView: React.FC<ContractDetailViewProps> = ({
                 <div className="flex flex-col gap-4 text-[12px] leading-relaxed text-gray-700 py-4">
                   <p className="font-serif text-justify indent-6">
                     Pelo presente instrumento particular, de um lado{' '}
-                    <strong>CONTRACTFLOW ENTERPRISE S.A.</strong>, inscrita no CNPJ sob o nº 12.345.678/0001-90, com sede na Av. Paulista, 1000, doravante denominada <em>CONTRATANTE</em>, e de outro lado{' '}
+                    <strong>GRUPO RIOMAIS S.A.</strong>, inscrita no CNPJ sob o nº 48.912.834/0001-09, doravante denominada <em>CONTRATANTE</em>, e de outro lado{' '}
                     <strong>AMAZON WEB SERVICES BRASIL LTDA.</strong>, inscrita no CNPJ sob o nº 23.456.789/0001-12, doravante denominada <em>CONTRATADA</em>, têm entre si justo e avençado o que segue:
                   </p>
 
@@ -512,6 +646,172 @@ export const ContractDetailView: React.FC<ContractDetailViewProps> = ({
                 </div>
               </div>
             </div>
+
+            {/* Notification Settings & Alert Simulator Card - Hidden for visualizador */}
+            {currentRole !== 'visualizador' && (
+              <div id="contract-notification-settings-card" className="p-4 bg-white rounded-2xl border border-[#e5eeff] shadow-[0_1px_3px_rgba(0,0,0,0.04)] flex flex-col gap-3.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-[#0051d5]">
+                      <span className="material-symbols-outlined text-[18px]">forward_to_inbox</span>
+                    </div>
+                    <div>
+                      <h4 className="text-[13px] font-bold text-[#0b1c30]">Notificações & Alertas do Contrato</h4>
+                      <span className="text-[10px] text-gray-500">Configuração de e-mail e simulação de disparos</span>
+                    </div>
+                  </div>
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-[#059669] text-[10px] font-bold">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                    Canal Ativo
+                  </span>
+                </div>
+
+                {/* Notification Email Field */}
+                <div className="flex flex-col gap-1.5 bg-[#f8fafc] p-3 rounded-xl border border-gray-200/70">
+                  <label htmlFor="input-contract-notification-email" className="text-[11px] font-bold text-[#0b1c30] flex items-center justify-between">
+                    <span className="flex items-center gap-1">
+                      <span className="material-symbols-outlined text-[14px] text-gray-500">mail</span>
+                      E-mail de notificação
+                    </span>
+                    {isEmailChanged && (
+                      <span className="text-[10px] text-amber-600 font-semibold flex items-center gap-0.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                        Alteração pendente
+                      </span>
+                    )}
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      id="input-contract-notification-email"
+                      type="email"
+                      value={notificationEmail}
+                      onChange={(e) => {
+                        setNotificationEmail(e.target.value);
+                        setIsEmailChanged(true);
+                      }}
+                      placeholder="ex: gestor.contratos@empresa.com.br"
+                      className="flex-1 h-9 px-3 rounded-xl bg-white border border-gray-300 text-[12px] text-[#0b1c30] font-medium focus:outline-none focus:ring-2 focus:ring-[#0051d5]/20 focus:border-[#0051d5]"
+                    />
+                    <button
+                      type="button"
+                      id="btn-save-contract-notification-email"
+                      onClick={handleSaveNotificationSettings}
+                      disabled={isSavingNotification}
+                      className="h-9 px-3.5 rounded-xl bg-[#0051d5] hover:bg-[#003ea8] disabled:opacity-50 text-white text-[12px] font-bold transition-all flex items-center gap-1 shrink-0 shadow-sm"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">save</span>
+                      <span>{isSavingNotification ? 'Salvando...' : 'Salvar'}</span>
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-gray-500 leading-tight">
+                    Os alertas automáticos de vencimento e alterações de status deste instrumento serão roteados para este endereço.
+                  </p>
+
+                  {/* Preferences Checkboxes */}
+                  <div className="pt-2 border-t border-gray-200/80 grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+                    <label className="flex items-center gap-1.5 text-gray-700 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={notifyOnExpiration}
+                        onChange={(e) => {
+                          setNotifyOnExpiration(e.target.checked);
+                          setIsEmailChanged(true);
+                        }}
+                        className="w-3.5 h-3.5 rounded text-[#0051d5] focus:ring-[#0051d5]"
+                      />
+                      <span>Alertar vencimento (&lt; 30d)</span>
+                    </label>
+                    <label className="flex items-center gap-1.5 text-gray-700 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={notifyOnStatusChange}
+                        onChange={(e) => {
+                          setNotifyOnStatusChange(e.target.checked);
+                          setIsEmailChanged(true);
+                        }}
+                        className="w-3.5 h-3.5 rounded text-[#0051d5] focus:ring-[#0051d5]"
+                      />
+                      <span>Alertar mudança de status</span>
+                    </label>
+                  </div>
+                </div>
+
+                {/* Simulation Trigger Controls */}
+                <div className="flex flex-col gap-2 pt-1 border-t border-gray-100">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-[#0b1c30] uppercase tracking-wider flex items-center gap-1">
+                      <span className="material-symbols-outlined text-[15px] text-purple-600">bolt</span>
+                      Simulação de Disparo de Alerta
+                    </span>
+                    <span className="text-[10px] text-purple-700 bg-purple-50 px-2 py-0.5 rounded-full font-bold">
+                      SMTP Simulator
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {/* Botão Simular Vencimento */}
+                    <button
+                      type="button"
+                      id="btn-simulate-expiration-alert"
+                      onClick={() => handleSimulateAlertTrigger('vencimento')}
+                      className="p-2.5 rounded-xl bg-amber-50/80 hover:bg-amber-100 border border-amber-200 text-amber-900 flex flex-col items-start gap-1 transition-all text-left group shadow-sm"
+                    >
+                      <div className="flex items-center justify-between w-full">
+                        <span className="inline-flex items-center gap-1 text-[11px] font-bold">
+                          <span className="material-symbols-outlined text-[16px] text-amber-600 group-hover:scale-110 transition-transform">
+                            notification_important
+                          </span>
+                          Alerta de Vencimento
+                        </span>
+                        <span className="text-[10px] bg-amber-200/80 px-1.5 py-0.2 rounded font-mono font-bold">
+                          {contract.remainingDays}d
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-amber-700 leading-tight">
+                        Disparar e-mail de término de vigência para <strong className="font-mono">{notificationEmail}</strong>
+                      </span>
+                    </button>
+
+                    {/* Botão Simular Mudança de Status */}
+                    <div className="p-2.5 rounded-xl bg-blue-50/80 border border-blue-200 flex flex-col gap-1.5 shadow-sm">
+                      <div className="flex items-center justify-between w-full">
+                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-900">
+                          <span className="material-symbols-outlined text-[16px] text-[#0051d5]">
+                            sync_alt
+                          </span>
+                          Mudança de Status
+                        </span>
+                        <span className="text-[9px] text-[#0051d5] font-bold uppercase bg-white px-1.5 py-0.2 rounded border border-blue-200">
+                          Atual: {contract.status}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <select
+                          id="select-simulated-status"
+                          value={simulatedStatus}
+                          onChange={(e) => setSimulatedStatus(e.target.value as ContractStatus)}
+                          className="flex-1 h-7 px-2 rounded-lg bg-white border border-blue-200 text-[11px] text-gray-800 font-semibold focus:outline-none focus:ring-1 focus:ring-[#0051d5]"
+                        >
+                          <option value="vigente">Vigente</option>
+                          <option value="avencer">A Vencer</option>
+                          <option value="sem_assinatura">Sem Assinatura</option>
+                          <option value="expirado">Expirado</option>
+                        </select>
+                        <button
+                          type="button"
+                          id="btn-simulate-status-change"
+                          onClick={() => handleSimulateAlertTrigger('mudanca_status')}
+                          className="h-7 px-2.5 rounded-lg bg-[#0051d5] hover:bg-[#003ea8] text-white text-[10px] font-bold flex items-center gap-0.5 shrink-0 transition-colors shadow-xs"
+                        >
+                          <span>Disparar</span>
+                          <span className="material-symbols-outlined text-[13px]">send</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* AI Contract Intelligence Block (Violet Gradient Theme) */}
             <div className="p-5 bg-gradient-to-br from-[#1e1b4b] via-[#2e1065] to-[#1e1b4b] text-white rounded-2xl shadow-xl border border-purple-800/40 flex flex-col gap-4 relative overflow-hidden">
@@ -788,6 +1088,49 @@ export const ContractDetailView: React.FC<ContractDetailViewProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Confirmation Modal for Deletion in Detail View */}
+      <ConfirmationModal
+        isOpen={showDeleteModal}
+        onClose={() => setShowDeleteModal(false)}
+        onConfirm={() => {
+          setIsDeleting(true);
+          setTimeout(() => {
+            if (onDeleteContract) {
+              onDeleteContract(contract.id);
+            }
+            setIsDeleting(false);
+            setShowDeleteModal(false);
+            onBack();
+          }, 350);
+        }}
+        isLoading={isDeleting}
+        title="Excluir Contrato em Visualização"
+        message={
+          <>
+            Você tem certeza de que deseja excluir permanentemente o contrato{' '}
+            <strong className="text-slate-900 font-mono font-bold">
+              {contract.code}
+            </strong>
+            ? Você será redirecionado para a listagem principal após a confirmação.
+          </>
+        }
+        confirmText="Sim, Excluir Instrumento"
+        cancelText="Cancelar"
+        variant="danger"
+        icon="delete_forever"
+        destructiveNotice="Atenção: Esta ação não pode ser desfeita. Todos os metadados, arquivos OCR e pareceres de IA vinculados a este contrato serão removidos."
+        itemDetails={[
+          { label: 'Código do Contrato', value: contract.code, highlighted: true },
+          { label: 'Título / Objeto', value: contract.title },
+          { label: 'Fornecedor', value: contract.supplierName },
+          {
+            label: 'Valor Global',
+            value: `R$ ${contract.totalValue.toLocaleString('pt-BR')},00`,
+          },
+          { label: 'Período', value: `${contract.startDate} a ${contract.endDate}` },
+        ]}
+      />
 
       {/* Global Toast */}
       {toastMessage && (

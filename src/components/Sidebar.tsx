@@ -7,6 +7,10 @@ interface SidebarProps {
   setActiveTab: (tab: string) => void;
   currentRole: UserRole;
   setCurrentRole: (role: UserRole) => void;
+  isCollapsed?: boolean;
+  setIsCollapsed?: (collapsed: boolean | ((prev: boolean) => boolean)) => void;
+  isMobileOpen?: boolean;
+  setIsMobileOpen?: (open: boolean) => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -14,125 +18,195 @@ export const Sidebar: React.FC<SidebarProps> = ({
   setActiveTab,
   currentRole,
   setCurrentRole,
+  isCollapsed = false,
+  setIsCollapsed,
+  isMobileOpen = false,
+  setIsMobileOpen,
 }) => {
   const [showRoleMenu, setShowRoleMenu] = useState(false);
   const [logoError, setLogoError] = useState(false);
 
-  const roleLabels: Record<UserRole, { label: string; sub: string }> = {
-    administrador: { label: 'Administrador', sub: 'Acesso Total' },
-    gestor: { label: 'Gestor', sub: 'Aprovação & Alçadas' },
-    operacional: { label: 'Operacional', sub: 'Cadastro & Consulta' },
+  const roleLabels: Record<UserRole, { label: string; sub: string; badge: string; color: string }> = {
+    administrador: { label: 'Administrador', sub: 'Acesso Total & Governança', badge: 'Controle Total', color: 'bg-purple-600' },
+    editor: { label: 'Editor', sub: 'Minutas, Edição & Contratos', badge: 'Edição Ativa', color: 'bg-[#316bf3]' },
+    visualizador: { label: 'Visualizador', sub: 'Consulta & Relatórios', badge: 'Somente Leitura', color: 'bg-amber-600' },
   };
 
-  return (
-    <aside className="fixed left-0 top-0 h-full w-64 bg-[#131b2e] z-50 flex flex-col justify-between shadow-[0_1px_8px_rgba(0,0,0,0.1)] select-none">
+  const navItems = [
+    { id: 'dashboard', label: 'Dashboard', icon: 'dashboard', restrictedFor: [] },
+    { id: 'fornecedores', label: 'Fornecedores', icon: 'domain', restrictedFor: [] },
+    { id: 'contratos', label: 'Contratos', icon: 'description', restrictedFor: [] },
+    { id: 'auditoria', label: 'Auditoria', icon: 'history', restrictedFor: ['editor', 'visualizador'] },
+    { id: 'configuracoes', label: 'Configurações', icon: 'settings', restrictedFor: ['visualizador'] },
+    { id: 'perfil', label: 'Meu Perfil', icon: 'account_circle', restrictedFor: [] },
+  ];
+
+  const handleNavClick = (tabId: string) => {
+    setActiveTab(tabId);
+    if (setIsMobileOpen) {
+      setIsMobileOpen(false);
+    }
+  };
+
+  // Reusable navigation component inside either desktop or mobile sidebar
+  const renderSidebarContent = (mobileView: boolean = false) => (
+    <div className="flex flex-col h-full justify-between">
       <div className="flex flex-col">
         {/* Brand Header */}
-        <div 
-          onClick={() => setActiveTab('dashboard')}
-          className="h-16 px-4 flex items-center gap-2.5 bg-[#131b2e]/95 border-b border-white/5 cursor-pointer hover:bg-white/[0.02] transition-colors"
-        >
-          {!logoError ? (
-            <img
-              alt="ContractFlow Logo"
-              className="h-8 w-auto object-contain shrink-0"
-              src={ASSETS.logo}
-              onError={() => setLogoError(true)}
-            />
-          ) : (
-            <div className="w-8 h-8 rounded-lg bg-[#0051d5] flex items-center justify-center text-white shrink-0">
-              <span className="material-symbols-outlined text-[20px]">assignment_turned_in</span>
-            </div>
-          )}
-          <div className="flex flex-col">
-            <span className="text-[17px] font-bold text-white tracking-tight leading-tight">ContractFlow</span>
-            <span className="text-[10px] text-[#7c839b] uppercase tracking-wider font-semibold">Enterprise CLM</span>
+        <div className={`h-16 px-4 flex items-center justify-between bg-[#131b2e]/95 border-b border-white/5`}>
+          <div
+            onClick={() => handleNavClick('dashboard')}
+            className="flex items-center gap-2.5 cursor-pointer hover:opacity-90 transition-opacity min-w-0"
+          >
+            {!logoError ? (
+              <img
+                alt="Mais Contratos Logo"
+                className="h-8 w-auto object-contain shrink-0"
+                src={ASSETS.logo}
+                onError={() => setLogoError(true)}
+              />
+            ) : (
+              <div className="w-8 h-8 rounded-lg bg-[#0051d5] flex items-center justify-center text-white shrink-0">
+                <span className="material-symbols-outlined text-[20px]">assignment_turned_in</span>
+              </div>
+            )}
+            {(!isCollapsed || mobileView) && (
+              <div className="flex flex-col min-w-0">
+                <span className="text-[17px] font-bold text-white tracking-tight leading-tight truncate">
+                  Mais Contratos
+                </span>
+                <span className="text-[10px] text-[#7c839b] uppercase tracking-wider font-semibold">
+                  Grupo RioMais
+                </span>
+              </div>
+            )}
           </div>
+
+          {/* Controls: Collapse toggle on desktop, or close button on mobile */}
+          {mobileView ? (
+            <button
+              onClick={() => setIsMobileOpen?.(false)}
+              className="p-1.5 rounded-lg text-[#7c839b] hover:text-white hover:bg-white/10 transition-colors"
+              title="Fechar menu"
+            >
+              <span className="material-symbols-outlined text-[20px]">close</span>
+            </button>
+          ) : (
+            setIsCollapsed && (
+              <button
+                onClick={() => setIsCollapsed((prev) => !prev)}
+                className={`p-1.5 rounded-lg text-[#7c839b] hover:text-white hover:bg-white/10 transition-colors ${
+                  isCollapsed ? 'mx-auto' : ''
+                }`}
+                title={isCollapsed ? 'Expandir barra lateral' : 'Recolher barra lateral'}
+              >
+                <span className="material-symbols-outlined text-[18px]">
+                  {isCollapsed ? 'chevron_right' : 'dock_to_left'}
+                </span>
+              </button>
+            )
+          )}
         </div>
 
         {/* Navigation Items */}
-        <div className="px-3 py-3">
+        <div className={`py-3 ${isCollapsed && !mobileView ? 'px-2' : 'px-3'}`}>
           <nav className="flex flex-col gap-1">
-            <button
-              onClick={() => setActiveTab('dashboard')}
-              className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-[13px] font-medium transition-all ${
-                activeTab === 'dashboard'
-                  ? 'bg-[#316bf3] text-white font-semibold shadow-sm'
-                  : 'text-[#7c839b] hover:bg-white/5 hover:text-white'
-              }`}
-            >
-              <span className="material-symbols-outlined text-[20px]">dashboard</span>
-              <span>Dashboard</span>
-            </button>
+            {navItems
+              .filter((item) => !item.restrictedFor?.includes(currentRole))
+              .map((item) => {
+                const isActive =
+                  activeTab === item.id || (item.id === 'contratos' && activeTab === 'contrato_detalhe');
 
-            <button
-              onClick={() => setActiveTab('fornecedores')}
-              className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-[13px] font-medium transition-all ${
-                activeTab === 'fornecedores'
-                  ? 'bg-[#316bf3] text-white font-semibold shadow-sm'
-                  : 'text-[#7c839b] hover:bg-white/5 hover:text-white'
-              }`}
-            >
-              <span className="material-symbols-outlined text-[20px]">domain</span>
-              <span>Fornecedores</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('contratos')}
-              className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-[13px] font-medium transition-all ${
-                activeTab === 'contratos' || activeTab === 'contrato_detalhe'
-                  ? 'bg-[#316bf3] text-white font-semibold shadow-sm'
-                  : 'text-[#7c839b] hover:bg-white/5 hover:text-white'
-              }`}
-            >
-              <span className="material-symbols-outlined text-[20px]">description</span>
-              <span>Contratos</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('configuracoes')}
-              className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-[13px] font-medium transition-all ${
-                activeTab === 'configuracoes'
-                  ? 'bg-[#316bf3] text-white font-semibold shadow-sm'
-                  : 'text-[#7c839b] hover:bg-white/5 hover:text-white'
-              }`}
-            >
-              <span className="material-symbols-outlined text-[20px]">settings</span>
-              <span>Configurações</span>
-            </button>
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => handleNavClick(item.id)}
+                    title={
+                      isCollapsed && !mobileView
+                        ? item.label
+                        : undefined
+                    }
+                    className={`w-full flex items-center rounded-xl text-[13px] font-medium transition-all ${
+                      isCollapsed && !mobileView
+                        ? 'justify-center p-2.5'
+                        : 'gap-3 px-3 py-2'
+                    } ${
+                      isActive
+                        ? 'bg-[#316bf3] text-white font-semibold shadow-sm'
+                        : 'text-[#7c839b] hover:bg-white/5 hover:text-white'
+                    }`}
+                  >
+                    <div className="relative flex items-center justify-center shrink-0">
+                      <span className="material-symbols-outlined text-[20px] shrink-0">{item.icon}</span>
+                    </div>
+                    {(!isCollapsed || mobileView) && (
+                      <div className="flex items-center justify-between flex-1 min-w-0">
+                        <span className="truncate">{item.label}</span>
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
           </nav>
         </div>
       </div>
 
       {/* Role Permission Selector at Bottom */}
-      <div className="p-3 bg-black/20 border-t border-white/5 relative">
+      <div className={`p-3 bg-black/20 border-t border-white/5 relative ${isCollapsed && !mobileView ? 'p-2' : 'p-3'}`}>
         <div className="flex flex-col gap-1.5">
-          <div className="flex items-center justify-between px-1">
-            <span className="text-[10px] text-[#7c839b] uppercase tracking-wider font-semibold">Nível de Permissão</span>
-            <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-[#316bf3] text-white">
-              Ativo
-            </span>
-          </div>
+          {(!isCollapsed || mobileView) && (
+            <div className="flex items-center justify-between px-1">
+              <span className="text-[10px] text-[#7c839b] uppercase tracking-wider font-semibold">
+                Nível de Permissão
+              </span>
+              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold text-white shadow-xs ${roleLabels[currentRole].color}`}>
+                {roleLabels[currentRole].badge}
+              </span>
+            </div>
+          )}
 
           <div
             onClick={() => setShowRoleMenu(!showRoleMenu)}
-            className="flex items-center justify-between p-2 rounded-xl bg-white/[0.07] hover:bg-white/[0.12] transition-colors cursor-pointer"
+            title={isCollapsed && !mobileView ? roleLabels[currentRole].label : undefined}
+            className={`flex items-center rounded-xl bg-white/[0.07] hover:bg-white/[0.12] transition-colors cursor-pointer ${
+              isCollapsed && !mobileView
+                ? 'justify-center p-2'
+                : 'justify-between p-2'
+            }`}
           >
-            <div className="flex items-center gap-2">
-              <span className="material-symbols-outlined text-[#dbe1ff] text-[20px]">shield_person</span>
-              <div className="flex flex-col text-left">
-                <span className="text-[12px] font-semibold text-white">{roleLabels[currentRole].label}</span>
-                <span className="text-[10px] text-[#7c839b]">{roleLabels[currentRole].sub}</span>
-              </div>
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="material-symbols-outlined text-[#dbe1ff] text-[20px] shrink-0">
+                shield_person
+              </span>
+              {(!isCollapsed || mobileView) && (
+                <div className="flex flex-col text-left truncate">
+                  <span className="text-[12px] font-semibold text-white truncate">
+                    {roleLabels[currentRole].label}
+                  </span>
+                  <span className="text-[10px] text-[#7c839b] truncate">
+                    {roleLabels[currentRole].sub}
+                  </span>
+                </div>
+              )}
             </div>
-            <span className="material-symbols-outlined text-[#7c839b] text-[18px]">unfold_more</span>
+            {(!isCollapsed || mobileView) && (
+              <span className="material-symbols-outlined text-[#7c839b] text-[18px] shrink-0">
+                unfold_more
+              </span>
+            )}
           </div>
 
           {/* Role Dropdown */}
           {showRoleMenu && (
-            <div className="absolute bottom-16 left-3 right-3 bg-[#1e293b] border border-white/10 rounded-xl shadow-2xl p-1.5 z-50 flex flex-col gap-1">
-              <div className="px-2 py-1 text-[10px] text-gray-400 font-semibold uppercase tracking-wider">Alternar Papel</div>
-              {(['administrador', 'gestor', 'operacional'] as UserRole[]).map((r) => (
+            <div
+              className={`absolute bottom-16 bg-[#1e293b] border border-white/10 rounded-xl shadow-2xl p-1.5 z-50 flex flex-col gap-1 ${
+                isCollapsed && !mobileView ? 'left-2 w-56' : 'left-3 right-3'
+              }`}
+            >
+              <div className="px-2 py-1 text-[10px] text-gray-400 font-semibold uppercase tracking-wider">
+                Alternar Papel
+              </div>
+              {(['administrador', 'editor', 'visualizador'] as UserRole[]).map((r) => (
                 <button
                   key={r}
                   onClick={() => {
@@ -140,20 +214,52 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     setShowRoleMenu(false);
                   }}
                   className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[12px] transition-colors text-left ${
-                    currentRole === r ? 'bg-[#316bf3] text-white font-semibold' : 'text-gray-300 hover:bg-white/5'
+                    currentRole === r
+                      ? 'bg-[#316bf3] text-white font-semibold'
+                      : 'text-gray-300 hover:bg-white/5'
                   }`}
                 >
                   <div className="flex flex-col">
                     <span>{roleLabels[r].label}</span>
                     <span className="text-[10px] opacity-75">{roleLabels[r].sub}</span>
                   </div>
-                  {currentRole === r && <span className="material-symbols-outlined text-[16px]">check</span>}
+                  {currentRole === r && (
+                    <span className="material-symbols-outlined text-[16px]">check</span>
+                  )}
                 </button>
               ))}
             </div>
           )}
         </div>
       </div>
-    </aside>
+    </div>
+  );
+
+  return (
+    <>
+      {/* 1. Desktop In-Flow Sidebar (Occupies true flex space, NEVER covers screen) */}
+      <aside
+        className={`hidden lg:flex flex-col justify-between shrink-0 h-full bg-[#131b2e] z-30 shadow-[0_1px_8px_rgba(0,0,0,0.1)] select-none transition-all duration-300 relative ${
+          isCollapsed ? 'w-20' : 'w-64'
+        }`}
+      >
+        {renderSidebarContent(false)}
+      </aside>
+
+      {/* 2. Mobile / Narrow-Screen Drawer (Only renders when explicitly opened, dismissible) */}
+      {isMobileOpen && (
+        <div className="fixed inset-0 z-50 lg:hidden flex">
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 bg-black/60 backdrop-blur-xs transition-opacity animate-in fade-in"
+            onClick={() => setIsMobileOpen?.(false)}
+          />
+          {/* Slide-over Menu */}
+          <aside className="relative w-72 max-w-[85vw] h-full bg-[#131b2e] flex flex-col justify-between shadow-2xl z-10 animate-in slide-in-from-left duration-200">
+            {renderSidebarContent(true)}
+          </aside>
+        </div>
+      )}
+    </>
   );
 };

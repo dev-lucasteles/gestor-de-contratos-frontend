@@ -1,4 +1,16 @@
-export type UserRole = 'administrador' | 'gestor' | 'operacional';
+export type UserRole = 'administrador' | 'editor' | 'visualizador';
+
+export type PermissionAccessLevel = 'total' | 'leitura' | 'bloqueado';
+
+export interface GranularPermission {
+  id: string;
+  category: 'contratos' | 'fornecedores' | 'assinaturas' | 'ia_juridica' | 'governanca';
+  name: string;
+  description: string;
+  administrador: PermissionAccessLevel;
+  editor: PermissionAccessLevel;
+  visualizador: PermissionAccessLevel;
+}
 
 export type ContractStatus = 'vigente' | 'avencer' | 'sem_assinatura' | 'expirado';
 
@@ -52,6 +64,9 @@ export interface Contract {
   signedDate?: string;
   signingMethod?: string;
   notes?: string;
+  notificationEmail?: string;
+  notifyOnExpiration?: boolean;
+  notifyOnStatusChange?: boolean;
   signers: Signer[];
   attachments: Attachment[];
   aiInsights: {
@@ -85,7 +100,7 @@ export interface NotificationItem {
   title: string;
   description: string;
   timeAgo: string;
-  type: 'expiracao' | 'assinatura' | 'fornecedor' | 'risco_ia';
+  type: 'expiracao' | 'assinatura' | 'fornecedor' | 'risco_ia' | 'status';
   contractCode?: string;
   read: boolean;
   urgent?: boolean;
@@ -93,16 +108,113 @@ export interface NotificationItem {
   actionText?: string;
 }
 
+export interface AuditFieldDiff {
+  field: string;
+  label: string;
+  oldValue: string;
+  newValue: string;
+}
+
 export interface AuditLog {
   id: string;
   user: string;
+  userEmail?: string;
+  role?: string;
   action: string;
   detail: string;
+  resource?: string;
+  resourceType?: 'contrato' | 'fornecedor' | 'seguranca' | 'sistema';
+  resourceId?: string;
+  ip?: string;
+  location?: string;
   timestamp: string;
-  type: 'add' | 'permission' | 'warning';
+  date?: string;
+  type: 'add' | 'permission' | 'warning' | 'security' | 'contract' | 'supplier' | 'update' | 'delete';
+  severity?: 'baixo' | 'medio' | 'alto';
+  changes?: AuditFieldDiff[];
+  integrityHash?: string;
+}
+
+export interface ApiKeyItem {
+  id: string;
+  name: string;
+  keyPrefix: string;
+  keyFull?: string;
+  environment: 'producao' | 'sandbox';
+  scope: 'Leitura & Escrita' | 'Somente Consulta' | 'Assinaturas Digitais';
+  createdAt: string;
+  lastUsedAt: string;
+  status: 'ativo' | 'revogado';
+}
+
+export interface WebhookItem {
+  id: string;
+  url: string;
+  events: string[];
+  status: 'ativo' | 'pausado';
+  lastDeliveryStatus: '200 OK' | '500 Error' | 'Pendente';
+  lastDeliveryAt: string;
+}
+
+export interface UserAccountItem {
+  id: string;
+  name: string;
+  email: string;
+  department: string;
+  role: UserRole;
+  status: 'ativo' | 'pendente' | 'bloqueado';
+  twoFactorEnabled: boolean;
+  lastLogin: string;
+}
+
+export interface UserProfile {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  avatarUrl?: string;
+  department: string;
+  jobTitle: string;
+  role: UserRole;
+  documentNumber: string;
+  documentType: 'CPF' | 'OAB' | 'Matrícula';
+  timezone: string;
+  language: string;
+  bio: string;
+  twoFactorEnabled: boolean;
+  icpCertificate: {
+    status: 'ativo' | 'expirado' | 'pendente';
+    type: 'e-CPF A1' | 'e-CPF A3' | 'e-CNPJ A1';
+    issuer: string;
+    serialNumber: string;
+    validUntil: string;
+    thumbprint: string;
+  };
+  signatureInitials: string;
+  signatureStyle: 'rubrica_estilizada' | 'manuscrita' | 'certificado_digital';
+  notifications: {
+    emailAlerts: boolean;
+    contractExpirationAlerts: boolean;
+    statusChangeAlerts: boolean;
+    aiRiskAlerts: boolean;
+    weeklyDigest: boolean;
+    browserPush: boolean;
+  };
+}
+
+export interface IntegrationConnector {
+  id: string;
+  name: string;
+  category: 'assinatura' | 'erp' | 'comunicacao' | 'storage';
+  icon: string;
+  description: string;
+  connected: boolean;
+  statusText: string;
+  lastSync?: string;
 }
 
 export interface SystemSettings {
+  darkMode?: boolean;
   notice30Days: boolean;
   notice60Days: boolean;
   signaturePending7Days: boolean;
@@ -112,11 +224,29 @@ export interface SystemSettings {
   smtpStatus: 'conectado' | 'desconectado';
   slackWebhookStatus: 'ativo' | 'inativo';
   smsStatus: 'opcional' | 'ativo';
+  // Security settings
+  twoFactorRequired?: boolean;
+  ssoEnabled?: boolean;
+  sessionTimeoutMinutes?: number;
+  ipWhitelistEnabled?: boolean;
+  ipWhitelist?: string;
+  passwordExpirationDays?: number;
+  // General settings
+  companyName?: string;
+  companyCnpj?: string;
+  contractPrefix?: string;
+  currency?: string;
+  timezone?: string;
+  // Approval tiers
+  tier1Limit?: number;
+  tier2Limit?: number;
+  requireDualSignatureAbove?: number;
+  granularPermissions?: GranularPermission[];
   rbacMatrix: {
     module: string;
     subtext: string;
     admin: boolean;
-    gestor: boolean;
-    operacional: boolean | 'leitura';
+    editor: boolean;
+    visualizador: boolean | 'leitura';
   }[];
 }

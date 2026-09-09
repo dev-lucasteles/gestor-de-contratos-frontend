@@ -1,33 +1,69 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { ASSETS } from '../constants/assets';
-import { NotificationItem, UserRole } from '../types';
+import { NotificationItem, UserRole, UserProfile } from '../types';
 
 interface HeaderProps {
   currentRole: UserRole;
-  onNewContractClick: () => void;
+  userProfile?: UserProfile;
+  onOpenProfile?: () => void;
+  onNewContractClick?: () => void;
+  onOpenNewContract?: () => void;
   onNavigateContract?: (code: string) => void;
+  onSelectNotificationContract?: (contractId: string) => void;
   notifications: NotificationItem[];
-  onMarkNotificationsRead: () => void;
-  searchQuery: string;
-  setSearchQuery: (query: string) => void;
+  onMarkNotificationsRead?: () => void;
+  searchQuery?: string;
+  setSearchQuery?: (query: string) => void;
+  onOpenSearch?: () => void;
   breadcrumb?: { section: string; page: string };
+  onToggleMobileSidebar?: () => void;
+  isSidebarCollapsed?: boolean;
+  onToggleCollapse?: () => void;
+  onRoleChange?: (role: UserRole) => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   currentRole,
+  userProfile,
+  onOpenProfile,
   onNewContractClick,
+  onOpenNewContract,
   onNavigateContract,
+  onSelectNotificationContract,
   notifications,
   onMarkNotificationsRead,
-  searchQuery,
+  searchQuery = '',
   setSearchQuery,
+  onOpenSearch,
   breadcrumb = { section: 'Workspace', page: 'Operações Contratuais' },
+  onToggleMobileSidebar,
+  isSidebarCollapsed = false,
+  onToggleCollapse,
+  onRoleChange,
 }) => {
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [avatarError, setAvatarError] = useState(false);
+  const [localSearch, setLocalSearch] = useState('');
   const notifRef = useRef<HTMLDivElement>(null);
   const profileRef = useRef<HTMLDivElement>(null);
+
+  const effectiveSearch = setSearchQuery ? searchQuery : localSearch;
+  const handleSearchChange = (val: string) => {
+    if (setSearchQuery) {
+      setSearchQuery(val);
+    } else {
+      setLocalSearch(val);
+    }
+  };
+
+  const handleCreateContract = () => {
+    if (onOpenNewContract) {
+      onOpenNewContract();
+    } else if (onNewContractClick) {
+      onNewContractClick();
+    }
+  };
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
@@ -45,30 +81,61 @@ export const Header: React.FC<HeaderProps> = ({
   }, []);
 
   return (
-    <header className="fixed top-0 left-64 right-0 h-16 bg-[#f8f9ff]/90 backdrop-blur-xl border-b border-[#e5eeff] shadow-[0_1px_8px_rgba(0,0,0,0.03)] z-40 flex items-center justify-between px-6">
-      {/* Breadcrumb & Search */}
-      <div className="flex items-center gap-6">
-        <div className="flex items-center gap-1.5 text-[12px] text-[#45464d]">
+    <header className="h-16 w-full shrink-0 bg-[#f8f9ff]/90 backdrop-blur-xl border-b border-[#e5eeff] shadow-[0_1px_8px_rgba(0,0,0,0.03)] z-20 flex items-center justify-between px-3 sm:px-6">
+      {/* Left: Navigation toggles, Breadcrumb & Search */}
+      <div className="flex items-center gap-2 sm:gap-4">
+        {/* Mobile Hamburger Drawer Toggle */}
+        <button
+          type="button"
+          onClick={onToggleMobileSidebar}
+          className="p-2 rounded-xl text-[#45464d] hover:bg-[#eff4ff] hover:text-[#0b1c30] transition-colors lg:hidden flex items-center justify-center"
+          title="Menu de navegação"
+        >
+          <span className="material-symbols-outlined text-[22px]">menu</span>
+        </button>
+
+        {/* Desktop Sidebar Collapse Toggle */}
+        {onToggleCollapse && (
+          <button
+            type="button"
+            onClick={onToggleCollapse}
+            className="p-2 rounded-xl text-[#76777d] hover:text-[#0b1c30] hover:bg-[#eff4ff] transition-colors hidden lg:flex items-center justify-center"
+            title={isSidebarCollapsed ? 'Expandir barra lateral' : 'Recolher barra lateral'}
+          >
+            <span className="material-symbols-outlined text-[20px]">
+              {isSidebarCollapsed ? 'menu_open' : 'dock_to_left'}
+            </span>
+          </button>
+        )}
+
+        {/* Breadcrumb */}
+        <div className="hidden sm:flex items-center gap-1.5 text-[12px] text-[#45464d]">
           <span className="material-symbols-outlined text-[18px] text-[#76777d]">folder_open</span>
           <span>{breadcrumb.section}</span>
           <span className="material-symbols-outlined text-[14px] text-[#c6c6cd]">chevron_right</span>
           <span className="text-[12px] text-[#0b1c30] font-semibold truncate max-w-xs">{breadcrumb.page}</span>
         </div>
 
+        {/* Search Bar */}
         <div className="relative flex items-center">
           <span className="material-symbols-outlined absolute left-2.5 text-[#76777d] text-[18px] pointer-events-none">
             search
           </span>
           <input
             type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Buscar contratos, CNPJ, fornecedor... ⌘K"
-            className="w-80 h-9 pl-8 pr-3 rounded-xl bg-[#eff4ff] text-[13px] text-[#0b1c30] placeholder:text-[#45464d]/70 focus:outline-none focus:bg-white focus:ring-2 focus:ring-[#0051d5]/20 border border-transparent focus:border-[#0051d5]/30 transition-all"
+            value={effectiveSearch}
+            onChange={(e) => handleSearchChange(e.target.value)}
+            onFocus={() => {
+              if (onOpenSearch && !effectiveSearch) {
+                // optionally trigger global search modal on click
+              }
+            }}
+            placeholder="Buscar contratos... ⌘K"
+            className="w-36 sm:w-64 md:w-80 h-9 pl-8 pr-7 rounded-xl bg-[#eff4ff] text-[13px] text-[#0b1c30] placeholder:text-[#45464d]/70 focus:outline-none focus:bg-white focus:ring-2 focus:ring-[#0051d5]/20 border border-transparent focus:border-[#0051d5]/30 transition-all"
           />
-          {searchQuery && (
+          {effectiveSearch && (
             <button
-              onClick={() => setSearchQuery('')}
+              onClick={() => handleSearchChange('')}
               className="absolute right-2.5 text-gray-400 hover:text-gray-600 text-xs"
             >
               <span className="material-symbols-outlined text-[16px]">close</span>
@@ -118,8 +185,12 @@ export const Header: React.FC<HeaderProps> = ({
                   <div
                     key={n.id}
                     onClick={() => {
-                      if (n.contractCode && onNavigateContract) {
-                        onNavigateContract(n.contractCode);
+                      if (n.contractCode) {
+                        if (onSelectNotificationContract) {
+                          onSelectNotificationContract(n.contractCode);
+                        } else if (onNavigateContract) {
+                          onNavigateContract(n.contractCode);
+                        }
                         setShowNotifications(false);
                       }
                     }}
@@ -138,7 +209,7 @@ export const Header: React.FC<HeaderProps> = ({
                         }`}
                       >
                         <span className="material-symbols-outlined text-[16px]">
-                          {n.type === 'expiracao' ? 'timelapse' : n.type === 'assinatura' ? 'draw' : 'domain_add'}
+                          {n.type === 'expiracao' ? 'timelapse' : n.type === 'assinatura' ? 'draw' : n.type === 'status' ? 'sync_alt' : 'domain_add'}
                         </span>
                       </div>
                       <div className="flex flex-col min-w-0 flex-1">
@@ -185,15 +256,18 @@ export const Header: React.FC<HeaderProps> = ({
           )}
         </div>
 
-        {/* Novo Contrato CTA Button */}
-        <button
-          type="button"
-          onClick={onNewContractClick}
-          className="flex items-center gap-1.5 h-9 px-3.5 rounded-xl bg-[#0051d5] text-white text-[13px] font-semibold shadow-[0_1px_3px_rgba(0,0,0,0.12)] hover:bg-[#003ea8] active:scale-[0.98] transition-all"
-        >
-          <span className="material-symbols-outlined text-[18px]">add</span>
-          <span>Novo Contrato</span>
-        </button>
+        {/* Novo Contrato CTA Button - Only shown when allowed */}
+        {currentRole !== 'visualizador' && (
+          <button
+            type="button"
+            id="btn-header-new-contract"
+            onClick={handleCreateContract}
+            className="flex items-center gap-1.5 h-9 px-3.5 rounded-xl bg-[#0051d5] text-white text-[13px] font-semibold shadow-[0_1px_3px_rgba(0,0,0,0.12)] hover:bg-[#003ea8] active:scale-[0.98] transition-all"
+          >
+            <span className="material-symbols-outlined text-[18px]">add</span>
+            <span>Novo Contrato</span>
+          </button>
+        )}
 
         <div className="h-6 w-[1px] bg-[#dce9ff]"></div>
 
@@ -204,16 +278,16 @@ export const Header: React.FC<HeaderProps> = ({
             className="flex items-center gap-2 pl-1 cursor-pointer group select-none"
           >
             <div className="relative">
-              {!avatarError ? (
+              {!avatarError && (userProfile?.avatarUrl || ASSETS.carlosAvatar) ? (
                 <img
-                  alt="Carlos Mendonça"
+                  alt={userProfile?.name || "Lucas Teles"}
                   className="w-8 h-8 rounded-full object-cover ring-1 ring-[#0051d5]/20 shadow-sm group-hover:ring-[#0051d5] transition-all"
-                  src={ASSETS.carlosAvatar}
+                  src={userProfile?.avatarUrl || ASSETS.carlosAvatar}
                   onError={() => setAvatarError(true)}
                 />
               ) : (
                 <div className="w-8 h-8 rounded-full bg-[#0051d5] text-white flex items-center justify-center font-bold text-xs shadow-sm">
-                  CM
+                  {userProfile?.signatureInitials || 'LT'}
                 </div>
               )}
               <span className="absolute bottom-0 right-0 w-2 h-2 rounded-full bg-emerald-500 ring-1 ring-white"></span>
@@ -221,36 +295,93 @@ export const Header: React.FC<HeaderProps> = ({
 
             <div className="flex flex-col text-left">
               <span className="text-[12px] font-bold text-[#0b1c30] group-hover:text-[#0051d5] transition-colors leading-tight">
-                Carlos Mendonça
+                {userProfile?.name || 'Lucas Teles'}
               </span>
-              <span className="text-[10px] text-[#76777d] capitalize">
-                {currentRole === 'administrador' ? 'Administrador Geral' : currentRole}
-              </span>
+              <div className="flex items-center gap-1">
+                <span
+                  className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.2 rounded border ${
+                    currentRole === 'administrador'
+                      ? 'bg-purple-50 text-purple-700 border-purple-200'
+                      : currentRole === 'editor'
+                      ? 'bg-blue-50 text-blue-700 border-blue-200'
+                      : 'bg-amber-50 text-amber-700 border-amber-200'
+                  }`}
+                >
+                  {currentRole === 'administrador' ? 'Admin' : currentRole === 'editor' ? 'Editor' : 'Visualizador'}
+                </span>
+              </div>
             </div>
             <span className="material-symbols-outlined text-[#76777d] text-[18px]">expand_more</span>
           </div>
 
           {/* Profile Dropdown */}
           {showProfileMenu && (
-            <div className="absolute right-0 mt-2 w-56 rounded-2xl bg-white shadow-2xl border border-[#e5eeff] p-1.5 z-50 animate-in fade-in">
-              <div className="px-3 py-2 border-b border-gray-100">
-                <p className="text-[12px] font-bold text-[#0b1c30]">Carlos Mendonça</p>
-                <p className="text-[10px] text-gray-500">carlos.mendonca@contractflow.com</p>
+            <div className="absolute right-0 mt-2 w-64 rounded-2xl bg-white shadow-2xl border border-[#e5eeff] p-1.5 z-50 animate-in fade-in">
+              <div
+                onClick={() => {
+                  setShowProfileMenu(false);
+                  onOpenProfile?.();
+                }}
+                className="px-3 py-2 border-b border-gray-100 cursor-pointer hover:bg-[#eff4ff]/60 rounded-xl transition-colors"
+              >
+                <div className="flex items-center justify-between">
+                  <p className="text-[12px] font-bold text-[#0b1c30]">{userProfile?.name || 'Lucas Teles'}</p>
+                  <span
+                    className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border ${
+                      currentRole === 'administrador'
+                        ? 'bg-purple-100 text-purple-800 border-purple-200'
+                        : currentRole === 'editor'
+                        ? 'bg-blue-100 text-blue-800 border-blue-200'
+                        : 'bg-amber-100 text-amber-800 border-amber-200'
+                    }`}
+                  >
+                    {currentRole}
+                  </span>
+                </div>
+                <p className="text-[10px] text-gray-500 truncate">{userProfile?.email || 'lucas.teles@gruporiomais.com.br'}</p>
+                <span className="mt-1 inline-flex items-center gap-1 text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                  Conectado • ICP A1
+                </span>
               </div>
+
+              {/* Quick Role Switcher */}
+              {onRoleChange && (
+                <div className="px-2 py-1.5 border-b border-gray-100">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Papel Atual (Permissões)</span>
+                  <div className="grid grid-cols-3 gap-1 mt-1">
+                    {(['administrador', 'editor', 'visualizador'] as UserRole[]).map((r) => (
+                      <button
+                        key={r}
+                        type="button"
+                        onClick={() => {
+                          onRoleChange(r);
+                          setShowProfileMenu(false);
+                        }}
+                        className={`px-1.5 py-1 rounded-lg text-[10px] font-bold capitalize transition-all ${
+                          currentRole === r
+                            ? 'bg-[#0051d5] text-white shadow-xs'
+                            : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
+                        }`}
+                      >
+                        {r === 'administrador' ? 'Admin' : r === 'editor' ? 'Editor' : 'Viewer'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div className="py-1">
                 <button
-                  onClick={() => setShowProfileMenu(false)}
-                  className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-[12px] text-gray-700 hover:bg-[#eff4ff] transition-colors text-left"
+                  type="button"
+                  onClick={() => {
+                    setShowProfileMenu(false);
+                    onOpenProfile?.();
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-[12px] text-gray-700 hover:bg-[#eff4ff] hover:text-[#0051d5] font-semibold transition-colors text-left"
                 >
-                  <span className="material-symbols-outlined text-[16px] text-gray-500">badge</span>
-                  <span>Meu Perfil</span>
-                </button>
-                <button
-                  onClick={() => setShowProfileMenu(false)}
-                  className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-[12px] text-gray-700 hover:bg-[#eff4ff] transition-colors text-left"
-                >
-                  <span className="material-symbols-outlined text-[16px] text-gray-500">lock</span>
-                  <span>Chaves de Acesso & ICP</span>
+                  <span className="material-symbols-outlined text-[16px] text-[#0051d5]">badge</span>
+                  <span>Meu Perfil & Credenciais</span>
                 </button>
               </div>
             </div>
