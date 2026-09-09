@@ -1,4 +1,4 @@
-# Mais Contratos 📋⚖️
+# Mais Contratos 
 
 > **Plataforma Corporativa de Gestão do Ciclo de Vida de Contratos (CLM), Governança de Fornecedores e Controle de Vencimentos.**
 
