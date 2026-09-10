@@ -1,4 +1,4 @@
-# Mais Contratos 📋⚖️
+# Mais Contratos
 
 > **Plataforma Corporativa de Gestão do Ciclo de Vida de Contratos (CLM), Governança de Fornecedores e Controle de Vencimentos.**
 
@@ -10,7 +10,7 @@
 
 ---
 
-## 📌 Sumário
+##  Sumário
 
 - [Sobre o Projeto](#-sobre-o-projeto)
 - [Funcionalidades Principais](#-funcionalidades-principais)
@@ -30,13 +30,13 @@
 
 ---
 
-## 📖 Sobre o Projeto
+##  Sobre o Projeto
 
 O **Mais Contratos** é uma solução completa para centralizar e otimizar toda a esteira de instrumentos contratuais corporativos, fornecedores homologados e fluxos de renovação. O sistema mitiga riscos de perda de prazos de rescisão ou reajuste, previne pagamentos indevidos, garante conformidade regulatória (LGPD e ICP-Brasil) e confere rastreabilidade ponta a ponta por meio de trilhas de auditoria criptográficas.
 
 ---
 
-## ✨ Funcionalidades Principais
+##  Funcionalidades Principais
 
 ### 1. Dashboard Executivo & Analítico
 - **Visão Geral**:
@@ -83,7 +83,7 @@ O **Mais Contratos** é uma solução completa para centralizar e otimizar toda 
 
 ---
 
-## 🛠 Arquitetura & Tecnologias
+##  Arquitetura & Tecnologias
 
 A aplicação utiliza uma arquitetura moderna, tipada de ponta a ponta e otimizada para alta performance:
 
@@ -97,7 +97,7 @@ A aplicação utiliza uma arquitetura moderna, tipada de ponta a ponta e otimiza
 
 ---
 
-## 📁 Estrutura de Pastas
+##  Estrutura de Pastas
 
 ```text
 ├── public/                     # Ativos estáticos públicos
@@ -137,7 +137,7 @@ A aplicação utiliza uma arquitetura moderna, tipada de ponta a ponta e otimiza
 
 ---
 
-## 📦 Pré-requisitos
+##  Pré-requisitos
 
 Antes de iniciar, certifique-se de possuir em seu ambiente:
 - **Node.js**: versão `18.x` ou superior (recomendado `20.x` LTS).
@@ -145,7 +145,7 @@ Antes de iniciar, certifique-se de possuir em seu ambiente:
 
 ---
 
-## 🚀 Instalação e Execução
+##  Instalação e Execução
 
 1. **Clone o repositório:**
    ```bash
@@ -177,7 +177,7 @@ Antes de iniciar, certifique-se de possuir em seu ambiente:
 
 ---
 
-## 🔒 Matriz de Acessos (RBAC)
+##  Matriz de Acessos (RBAC)
 
 O sistema possui controle rígido de autorização baseado nas seguintes alçadas:
 
@@ -197,14 +197,9 @@ O sistema possui controle rígido de autorização baseado nas seguintes alçada
 
 ---
 
-## 🛡️ Segurança & Compliance
+##  Segurança & Compliance
 
 - **LGPD & Governança de Dados**: Princípio do menor privilégio aplicado à visualização de contratos e dados societários de fornecedores.
 - **ICP-Brasil**: Compatibilidade estrutural para aposição de assinaturas digitais com carimbo do tempo e certificados padrão A1/A3.
 - **Rastreabilidade Criptográfica**: Todos os registros de auditoria contam com hash unidirecional (SHA-256) encadeado para garantir a não-repudiação das ações.
 
----
-
-## 📄 Licença
-
-Este projeto é desenvolvido para uso corporativo interno e governança jurídica. Todos os direitos reservados.
