@@ -46,6 +46,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [hasDrawnSignature, setHasDrawnSignature] = useState(false);
+  const [savedSignatureUrl, setSavedSignatureUrl] = useState<string | null>(null);
 
   // Certificate test modal / state
   const [isTestingCertificate, setIsTestingCertificate] = useState(false);
@@ -61,19 +62,42 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     setTimeout(() => setToastMessage(null), 3500);
   };
 
-  // Canvas drawing handlers
+  // Canvas drawing handlers & state synchronization:
+  // Se o usuário troca de aba, a tag <canvas> é desmontada.
+  // Ao remontar a aba 'assinatura_digital', se houver assinatura fixada prévia (savedSignatureUrl),
+  // nós a restauramos no canvas; caso contrário, garantimos hasDrawnSignature = false para que
+  // o texto de ajuda seja exibido e o usuário não consiga salvar uma assinatura em branco.
   useEffect(() => {
-    if (activeSubTab === 'assinatura_digital' && canvasRef.current) {
+    if (activeSubTab === 'assinatura_digital') {
       const canvas = canvasRef.current;
+      if (!canvas) return;
       const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.strokeStyle = '#0051d5';
-        ctx.lineWidth = 2.5;
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
+      if (!ctx) return;
+
+      ctx.strokeStyle = '#0051d5';
+      ctx.lineWidth = 2.5;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+
+      if (savedSignatureUrl) {
+        const img = new Image();
+        img.onload = () => {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, 0, 0);
+          setHasDrawnSignature(true);
+        };
+        img.src = savedSignatureUrl;
+      } else {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        setHasDrawnSignature(false);
+      }
+    } else {
+      // Ao sair da aba sem fixar assinatura, limpa o estado de desenho fantasma
+      if (!savedSignatureUrl) {
+        setHasDrawnSignature(false);
       }
     }
-  }, [activeSubTab]);
+  }, [activeSubTab, savedSignatureUrl]);
 
   const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
@@ -112,11 +136,50 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
   const clearCanvas = () => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (canvas) {
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+      }
+    }
+    setHasDrawnSignature(false);
+    setSavedSignatureUrl(null);
+  };
+
+  const handleFixSignature = () => {
+    const canvas = canvasRef.current;
+    if (!canvas || !hasDrawnSignature) {
+      showToast('Por favor, desenhe sua assinatura no espaço indicado antes de fixar.');
+      return;
+    }
+
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    setHasDrawnSignature(false);
+
+    // Checagem de segurança para garantir que o canvas não está em branco
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const hasPixels = new Uint32Array(imageData.data.buffer).some((pixel) => pixel !== 0);
+
+    if (!hasPixels) {
+      setHasDrawnSignature(false);
+      showToast('O espaço de assinatura está em branco. Desenhe sua assinatura com o cursor.');
+      return;
+    }
+
+    const dataUrl = canvas.toDataURL('image/png');
+    setSavedSignatureUrl(dataUrl);
+    showToast('Assinatura manuscrita capturada e salva com sucesso!');
+
+    if (onAddAuditLog) {
+      onAddAuditLog({
+        action: 'ASSINATURA_DIGITAL_CAPTURADA',
+        detail: `Assinatura manuscrita capturada e registrada para ${formData.name}`,
+        resource: formData.email,
+        resourceType: 'sistema',
+        type: 'security',
+        severity: 'baixo',
+      });
+    }
   };
 
   const handleSaveProfile = (e?: React.FormEvent) => {
@@ -733,10 +796,14 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 </span>
                 <button
                   type="button"
-                  onClick={() => {
-                    showToast('Assinatura manuscrita capturada e salva com sucesso!');
-                  }}
-                  className="h-8 px-3.5 rounded-lg bg-[#0051d5] text-white text-[12px] font-semibold hover:bg-[#003ea8] transition-colors"
+                  id="btn-fixar-assinatura-manuscrita"
+                  disabled={!hasDrawnSignature}
+                  onClick={handleFixSignature}
+                  className={`h-8 px-3.5 rounded-lg text-[12px] font-semibold transition-all ${
+                    hasDrawnSignature
+                      ? 'bg-[#0051d5] text-white hover:bg-[#003ea8] cursor-pointer shadow-xs active:scale-[0.98]'
+                      : 'bg-gray-200 text-gray-400 cursor-not-allowed opacity-60'
+                  }`}
                 >
                   Fixar Assinatura
                 </button>
@@ -823,6 +890,17 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                       </span>
                     </div>
                   </div>
+
+                  {savedSignatureUrl && (
+                    <div className="pt-2 border-t border-gray-100 flex items-center justify-between">
+                      <span className="text-[10px] text-gray-400 font-medium">Assinatura Gráfica Capturada:</span>
+                      <img
+                        src={savedSignatureUrl}
+                        alt="Assinatura manuscrita capturada"
+                        className="h-8 max-w-[140px] object-contain"
+                      />
+                    </div>
+                  )}
 
                   <div className="pt-2 border-t border-gray-100 flex flex-col gap-1 text-[9px] text-gray-500 font-mono">
                     <div>DATA/HORA: {new Date().toLocaleDateString('pt-BR')} às 14:30:00 UTC-03:00</div>

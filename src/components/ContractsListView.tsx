@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Contract, Supplier, ContractStatus, UserRole } from '../types';
 import { ConfirmationModal } from './ConfirmationModal';
+import { calculateDaysRemaining } from '../utils/contractMonitor';
 
 interface ContractsListViewProps {
   contracts: Contract[];
@@ -11,7 +12,13 @@ interface ContractsListViewProps {
   isDrawerOpen: boolean;
   setIsDrawerOpen: (open: boolean) => void;
   currentRole?: UserRole;
+  initialSupplierFilter?: string;
+  onClearInitialSupplierFilter?: () => void;
 }
+
+type ValidityFilterType = 'todas' | 'vigente_ano' | 'vigente_2025' | 'expiracao_proxima';
+type CategoryFilterType = 'todas' | 'saas_nuvem' | 'infraestrutura_hw' | 'consultoria_especializada';
+type ContractPeriodicity = 'mensal' | 'anual' | 'demanda' | 'plurianual';
 
 export const ContractsListView: React.FC<ContractsListViewProps> = ({
   contracts,
@@ -22,11 +29,26 @@ export const ContractsListView: React.FC<ContractsListViewProps> = ({
   isDrawerOpen,
   setIsDrawerOpen,
   currentRole = 'administrador',
+  initialSupplierFilter,
+  onClearInitialSupplierFilter,
 }) => {
   const [activeFilterTab, setActiveFilterTab] = useState<'todos' | ContractStatus>('todos');
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedSupplierFilter, setSelectedSupplierFilter] = useState('');
+  const [selectedSupplierFilter, setSelectedSupplierFilter] = useState(initialSupplierFilter || '');
+  const [validityFilter, setValidityFilter] = useState<ValidityFilterType>('todas');
+  const [categoryFilter, setCategoryFilter] = useState<CategoryFilterType>('todas');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Sincroniza filtro de fornecedor quando navegado de outra visão
+  useEffect(() => {
+    if (initialSupplierFilter) {
+      setSelectedSupplierFilter(initialSupplierFilter);
+      setActiveFilterTab('todos');
+      if (onClearInitialSupplierFilter) {
+        onClearInitialSupplierFilter();
+      }
+    }
+  }, [initialSupplierFilter, onClearInitialSupplierFilter]);
 
   // Confirmation Modal State for Contract Deletion
   const [contractToDelete, setContractToDelete] = useState<Contract | null>(null);
@@ -39,12 +61,38 @@ export const ContractsListView: React.FC<ContractsListViewProps> = ({
   const [newStartDate, setNewStartDate] = useState('2025-05-01');
   const [newEndDate, setNewEndDate] = useState('2026-05-01');
   const [newTotalValue, setNewTotalValue] = useState('180000');
-  const [newPeriodicity, setNewPeriodicity] = useState<'mensal' | 'anual' | 'demanda' | 'plurianual'>('mensal');
+  const [newPeriodicity, setNewPeriodicity] = useState<ContractPeriodicity>('mensal');
   const [newIsSigned, setNewIsSigned] = useState(true);
   const [newNotificationEmail, setNewNotificationEmail] = useState('gestor.contratos@empresa.com.br');
   const [isUploading, setIsUploading] = useState(false);
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
   const [isAiFilling, setIsAiFilling] = useState(false);
+
+  const handleValidityFilterChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const val = e.target.value;
+    if (val === 'todas' || val === 'vigente_2025' || val === 'expiracao_proxima') {
+      setValidityFilter(val);
+    }
+  };
+
+  const handleCategoryFilterChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const val = e.target.value;
+    if (
+      val === 'todas' ||
+      val === 'saas_nuvem' ||
+      val === 'infraestrutura_hw' ||
+      val === 'consultoria_especializada'
+    ) {
+      setCategoryFilter(val);
+    }
+  };
+
+  const handlePeriodicityChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const val = e.target.value;
+    if (val === 'mensal' || val === 'anual' || val === 'demanda' || val === 'plurianual') {
+      setNewPeriodicity(val);
+    }
+  };
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -55,6 +103,67 @@ export const ContractsListView: React.FC<ContractsListViewProps> = ({
   const filteredContracts = contracts.filter((c) => {
     if (activeFilterTab !== 'todos' && c.status !== activeFilterTab) return false;
     if (selectedSupplierFilter && c.supplierId !== selectedSupplierFilter) return false;
+
+    if (validityFilter !== 'todas') {
+      if (validityFilter === 'vigente_ano' || validityFilter === 'vigente_2025') {
+        const currentYear = new Date().getFullYear();
+        const startYear = c.startDate ? new Date(c.startDate).getFullYear() : null;
+        const endYear = c.endDate ? new Date(c.endDate).getFullYear() : null;
+        const matchesYear =
+          (startYear !== null && startYear <= currentYear && (endYear === null || endYear >= currentYear)) ||
+          (c.startDate && c.startDate.includes(String(currentYear))) ||
+          (c.endDate && c.endDate.includes(String(currentYear))) ||
+          (c.startDate && c.startDate.includes('2025')) ||
+          (c.endDate && c.endDate.includes('2025'));
+        if (!matchesYear) return false;
+      } else if (validityFilter === 'expiracao_proxima') {
+        const remainingDays = calculateDaysRemaining(c);
+        const isExpiringSoon =
+          c.status === 'avencer' ||
+          (remainingDays > 0 && remainingDays <= 90);
+        if (!isExpiringSoon) return false;
+      }
+    }
+
+    if (categoryFilter !== 'todas') {
+      const cat = (c.category || '').toLowerCase();
+      const title = (c.title || '').toLowerCase();
+      if (categoryFilter === 'saas_nuvem') {
+        const matches =
+          cat.includes('saas') ||
+          cat.includes('nuvem') ||
+          cat.includes('cloud') ||
+          cat.includes('software') ||
+          title.includes('cloud') ||
+          title.includes('software') ||
+          title.includes('saas');
+        if (!matches) return false;
+      } else if (categoryFilter === 'infraestrutura_hw') {
+        const matches =
+          cat.includes('infra') ||
+          cat.includes('hw') ||
+          cat.includes('hardware') ||
+          cat.includes('datacenter') ||
+          title.includes('hardware') ||
+          title.includes('infra') ||
+          title.includes('datacenter');
+        if (!matches) return false;
+      } else if (categoryFilter === 'consultoria_especializada') {
+        const matches =
+          cat.includes('consultoria') ||
+          cat.includes('especializada') ||
+          cat.includes('assessoria') ||
+          cat.includes('jurídic') ||
+          cat.includes('auditoria') ||
+          title.includes('consultoria') ||
+          title.includes('assessoria') ||
+          title.includes('auditoria');
+        if (!matches) return false;
+      } else {
+        if (!cat.includes(categoryFilter.toLowerCase())) return false;
+      }
+    }
+
     if (searchTerm) {
       const q = searchTerm.toLowerCase();
       return (
@@ -81,7 +190,12 @@ export const ContractsListView: React.FC<ContractsListViewProps> = ({
     setTimeout(() => {
       setIsAiFilling(false);
       setNewTitle('Fornecimento e Licenciamento de Software Cloud');
-      setNewSupplierId('aws');
+      const targetSupplier =
+        suppliers.find((s) => s.id.toLowerCase().includes('aws') || s.razaoSocial.toLowerCase().includes('amazon')) ||
+        suppliers[0];
+      if (targetSupplier) {
+        setNewSupplierId(targetSupplier.id);
+      }
       setNewTotalValue('360000');
       setNewNotificationEmail('gestor.cloud@empresa.com.br');
       setUploadedFileName('Minuta_AWS_Cloud_Assinada_v2.pdf');
@@ -94,28 +208,52 @@ export const ContractsListView: React.FC<ContractsListViewProps> = ({
     e.preventDefault();
     const sup = suppliers.find((s) => s.id === newSupplierId) || suppliers[0];
     const val = parseFloat(newTotalValue) || 100000;
-    const generatedCode = `CTR-2025-${Math.floor(100 + Math.random() * 900)}`;
+
+    const start = new Date(newStartDate);
+    const end = new Date(newEndDate);
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+
+    const diffTotalMs = !isNaN(start.getTime()) && !isNaN(end.getTime())
+      ? Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)))
+      : 365;
+    const diffRemainingMs = !isNaN(end.getTime())
+      ? Math.ceil((end.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+      : 365;
+    const remainingDays = Math.max(0, diffRemainingMs);
+    const elapsedDays = Math.max(0, diffTotalMs - remainingDays);
+    const progressPercent = Math.min(100, Math.max(0, Math.round((elapsedDays / diffTotalMs) * 100)));
+
+    let derivedStatus: ContractStatus = newIsSigned ? 'vigente' : 'sem_assinatura';
+    if (newIsSigned && remainingDays <= 60 && remainingDays > 0) {
+      derivedStatus = 'avencer';
+    } else if (newIsSigned && remainingDays === 0) {
+      derivedStatus = 'expirado';
+    }
+
+    const currentYear = new Date().getFullYear();
+    const generatedCode = `CTR-${currentYear}-${Math.floor(100 + Math.random() * 900)}`;
 
     const newContract: Partial<Contract> = {
       id: 'ctr-' + Date.now(),
       code: generatedCode,
       internalId: newInternalId,
       title: newTitle || 'Contrato de Prestação de Serviços Tecnológicos',
-      supplierId: sup.id,
-      supplierName: sup.razaoSocial,
-      supplierCnpj: sup.cnpj,
+      supplierId: sup ? sup.id : 'sup-padrao',
+      supplierName: sup ? sup.razaoSocial : 'Fornecedor em Homologação',
+      supplierCnpj: sup ? sup.cnpj : '00.000.000/0001-00',
       category: 'Tecnologia / SaaS',
       startDate: newStartDate,
       endDate: newEndDate,
-      totalDays: 365,
-      remainingDays: 365,
+      totalDays: diffTotalMs,
+      remainingDays: remainingDays,
       totalValue: val,
       monthlyValue: newPeriodicity === 'mensal' ? Math.round(val / 12) : undefined,
       periodicity: newPeriodicity,
-      status: newIsSigned ? 'vigente' : 'sem_assinatura',
+      status: derivedStatus,
       signatureStatus: newIsSigned ? 'Assinado Digitalmente' : 'Pendente de Assinatura',
       hasOcr: true,
-      progressPercent: 2,
+      progressPercent: progressPercent,
       isSigned: newIsSigned,
       notificationEmail: newNotificationEmail.trim() || 'gestor.contratos@empresa.com.br',
       notifyOnExpiration: true,
@@ -357,10 +495,14 @@ export const ContractsListView: React.FC<ContractsListViewProps> = ({
           {/* Search and Filters Controls */}
           <div className="flex flex-wrap items-center gap-3 pt-1">
             <div className="relative flex-1 min-w-[260px]">
+              <label htmlFor="contracts-search" className="sr-only">
+                Filtrar por código, razão social, objeto
+              </label>
               <span className="material-symbols-outlined absolute left-3 top-2.5 text-gray-400 text-[18px]">
                 search
               </span>
               <input
+                id="contracts-search"
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -369,7 +511,11 @@ export const ContractsListView: React.FC<ContractsListViewProps> = ({
               />
             </div>
 
+            <label htmlFor="contracts-filter-supplier" className="sr-only">
+              Filtrar por Fornecedor
+            </label>
             <select
+              id="contracts-filter-supplier"
               value={selectedSupplierFilter}
               onChange={(e) => setSelectedSupplierFilter(e.target.value)}
               className="h-10 px-3 rounded-xl bg-white border border-[#dce9ff] text-[13px] text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#0051d5]/20 cursor-pointer"
@@ -382,21 +528,33 @@ export const ContractsListView: React.FC<ContractsListViewProps> = ({
               ))}
             </select>
 
+            <label htmlFor="contracts-filter-validity" className="sr-only">
+              Filtrar por Vigência
+            </label>
             <select
+              id="contracts-filter-validity"
+              value={validityFilter}
+              onChange={handleValidityFilterChange}
               className="h-10 px-3 rounded-xl bg-white border border-[#dce9ff] text-[13px] text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#0051d5]/20 cursor-pointer"
             >
-              <option>Todas as Vigências</option>
-              <option>Vigente (Ano 2025)</option>
-              <option>Expiração Próxima (Q4)</option>
+              <option value="todas">Todas as Vigências</option>
+              <option value="vigente_ano">Vigente no Ano Atual ({new Date().getFullYear()})</option>
+              <option value="expiracao_proxima">Expiração Próxima (≤ 90 dias)</option>
             </select>
 
+            <label htmlFor="contracts-filter-category" className="sr-only">
+              Filtrar por Modalidade
+            </label>
             <select
+              id="contracts-filter-category"
+              value={categoryFilter}
+              onChange={handleCategoryFilterChange}
               className="h-10 px-3 rounded-xl bg-white border border-[#dce9ff] text-[13px] text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#0051d5]/20 cursor-pointer"
             >
-              <option>Todas as Modalidades</option>
-              <option>SaaS & Nuvem</option>
-              <option>Infraestrutura HW</option>
-              <option>Consultoria Especializada</option>
+              <option value="todas">Todas as Modalidades</option>
+              <option value="saas_nuvem">SaaS & Nuvem</option>
+              <option value="infraestrutura_hw">Infraestrutura HW</option>
+              <option value="consultoria_especializada">Consultoria Especializada</option>
             </select>
           </div>
         </div>
@@ -416,7 +574,24 @@ export const ContractsListView: React.FC<ContractsListViewProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {filteredContracts.map((contract) => (
+                {filteredContracts.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="py-12 px-4 text-center">
+                      <div className="flex flex-col items-center justify-center gap-2">
+                        <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400 mb-1 border border-slate-200">
+                          <span className="material-symbols-outlined text-[28px]">search_off</span>
+                        </div>
+                        <p className="text-[14px] font-bold text-slate-800">
+                          Nenhum contrato encontrado
+                        </p>
+                        <p className="text-[12px] text-slate-500 max-w-sm">
+                          Não foram localizados contratos para os filtros aplicados. Tente ajustar os termos de busca ou filtros de status.
+                        </p>
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  filteredContracts.map((contract) => (
                   <tr
                     key={contract.id}
                     onClick={() => onSelectContract(contract)}
@@ -578,11 +753,13 @@ export const ContractsListView: React.FC<ContractsListViewProps> = ({
                       </div>
                     </td>
                   </tr>
-                ))}
-              </tbody>
+                ))
+              )}
+            </tbody>
             </table>
           </div>
 
+          {/* Table Footer Summary & Pagination */}
           <div className="p-3 bg-gray-50/70 border-t border-gray-100 flex items-center justify-between text-[11px] text-gray-500">
             <span>
               Exibindo <strong>{filteredContracts.length}</strong> de{' '}
@@ -598,15 +775,15 @@ export const ContractsListView: React.FC<ContractsListViewProps> = ({
       {/* Slide-over Drawer: "Novo Instrumento Contratual" (Matches Image 7.png / HTML) */}
       {isDrawerOpen && (
         <div className="fixed inset-0 z-50 flex justify-end bg-black/40 backdrop-blur-xs animate-in fade-in">
-          <div className="w-full max-w-xl bg-white h-full shadow-2xl flex flex-col justify-between overflow-y-auto border-l border-gray-200 animate-in slide-in-from-right duration-300">
-            {/* Drawer Header */}
-            <div className="p-5 border-b border-gray-100 flex items-center justify-between bg-[#eff4ff]/40 sticky top-0 z-20">
+          <div className="w-full max-w-xl bg-white h-full shadow-2xl flex flex-col overflow-hidden border-l border-gray-200 animate-in slide-in-from-right duration-300">
+            {/* Drawer Header - Fixed Top with 100% Solid Background */}
+            <div className="p-5 border-b border-gray-200 flex items-center justify-between bg-white shrink-0 z-20 shadow-xs">
               <div className="flex items-center gap-2.5">
-                <div className="w-10 h-10 rounded-xl bg-[#0051d5] text-white flex items-center justify-center">
+                <div className="w-10 h-10 rounded-xl bg-[#0051d5] text-white flex items-center justify-center shrink-0 shadow-xs">
                   <span className="material-symbols-outlined text-[22px]">post_add</span>
                 </div>
                 <div className="flex flex-col">
-                  <h2 className="text-[17px] font-bold text-[#0b1c30]">
+                  <h2 className="text-[17px] font-bold text-[#0b1c30] leading-tight">
                     Novo Instrumento Contratual
                   </h2>
                   <span className="text-[11px] text-gray-500">
@@ -618,230 +795,233 @@ export const ContractsListView: React.FC<ContractsListViewProps> = ({
               <button
                 type="button"
                 onClick={() => setIsDrawerOpen(false)}
-                className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100"
+                className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+                title="Fechar"
               >
                 <span className="material-symbols-outlined text-[22px]">close</span>
               </button>
             </div>
 
-            {/* Drawer Form Body */}
-            <form onSubmit={handleCreateSubmit} className="p-6 flex flex-col gap-4 flex-1">
-              {/* AI Auto-fill Banner */}
-              <div className="p-3.5 bg-gradient-to-r from-purple-50 via-indigo-50 to-purple-50 rounded-2xl border border-purple-200/80 flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2.5">
-                  <span className="material-symbols-outlined text-purple-600 text-[22px]">auto_awesome</span>
-                  <div className="flex flex-col">
-                    <span className="text-[12px] font-bold text-purple-900">
-                      Preenchimento Autônomo com IA
-                    </span>
-                    <span className="text-[10px] text-purple-700">
-                      A IA lê minutas contratuais em PDF e popula os campos
-                    </span>
+            {/* Drawer Form Body - Scrollable Area Only */}
+            <form onSubmit={handleCreateSubmit} className="flex-1 flex flex-col min-h-0 overflow-hidden">
+              <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-4">
+                {/* AI Auto-fill Banner */}
+                <div className="p-3.5 bg-gradient-to-r from-purple-50 via-indigo-50 to-purple-50 rounded-2xl border border-purple-200/80 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2.5">
+                    <span className="material-symbols-outlined text-purple-600 text-[22px]">auto_awesome</span>
+                    <div className="flex flex-col">
+                      <span className="text-[12px] font-bold text-purple-900">
+                        Preenchimento Autônomo com IA
+                      </span>
+                      <span className="text-[10px] text-purple-700">
+                        A IA lê minutas contratuais em PDF e popula os campos
+                      </span>
+                    </div>
                   </div>
+
+                  <button
+                    type="button"
+                    disabled={isAiFilling}
+                    onClick={handleSimulateAiFill}
+                    className="px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-[11px] font-bold transition-all shrink-0 flex items-center gap-1 shadow-sm disabled:opacity-50"
+                  >
+                    <span className={`material-symbols-outlined text-[14px] ${isAiFilling ? 'animate-spin' : ''}`}>
+                      {isAiFilling ? 'sync' : 'auto_fix_high'}
+                    </span>
+                    <span>{isAiFilling ? 'Lendo Minuta...' : 'Cadastrar com IA'}</span>
+                  </button>
                 </div>
 
-                <button
-                  type="button"
-                  disabled={isAiFilling}
-                  onClick={handleSimulateAiFill}
-                  className="px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-[11px] font-bold transition-all shrink-0 flex items-center gap-1 shadow-sm disabled:opacity-50"
-                >
-                  <span className={`material-symbols-outlined text-[14px] ${isAiFilling ? 'animate-spin' : ''}`}>
-                    {isAiFilling ? 'sync' : 'auto_fix_high'}
-                  </span>
-                  <span>{isAiFilling ? 'Lendo Minuta...' : 'Cadastrar com IA'}</span>
-                </button>
-              </div>
-
-              {/* Vincular Fornecedor */}
-              <div className="flex flex-col gap-1">
-                <label className="text-[12px] font-bold text-[#0b1c30]">
-                  Vincular Fornecedor *
-                </label>
-                <select
-                  value={newSupplierId}
-                  onChange={(e) => setNewSupplierId(e.target.value)}
-                  required
-                  className="h-10 px-3 rounded-xl bg-gray-50 border border-gray-200 text-[13px] text-gray-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0051d5]/20 cursor-pointer"
-                >
-                  {suppliers.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.razaoSocial} ({s.cnpj})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Título / Objeto */}
-              <div className="flex flex-col gap-1">
-                <label className="text-[12px] font-bold text-[#0b1c30]">
-                  Título / Objeto do Contrato *
-                </label>
-                <input
-                  type="text"
-                  value={newTitle}
-                  onChange={(e) => setNewTitle(e.target.value)}
-                  placeholder="Ex: Fornecimento e Licenciamento Enterprise Cloud"
-                  required
-                  className="h-10 px-3 rounded-xl bg-gray-50 border border-gray-200 text-[13px] text-gray-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0051d5]/20"
-                />
-              </div>
-
-              {/* Processo Interno */}
-              <div className="flex flex-col gap-1">
-                <label className="text-[12px] font-bold text-[#0b1c30]">
-                  Nº do Processo / Referência Interna
-                </label>
-                <input
-                  type="text"
-                  value={newInternalId}
-                  onChange={(e) => setNewInternalId(e.target.value)}
-                  placeholder="#9948-25"
-                  className="h-10 px-3 rounded-xl bg-gray-50 border border-gray-200 text-[13px] font-mono text-gray-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0051d5]/20"
-                />
-              </div>
-
-              {/* Datas de Vigência */}
-              <div className="grid grid-cols-2 gap-3">
+                {/* Vincular Fornecedor */}
                 <div className="flex flex-col gap-1">
                   <label className="text-[12px] font-bold text-[#0b1c30]">
-                    Data de Início *
+                    Vincular Fornecedor *
                   </label>
-                  <input
-                    type="date"
-                    value={newStartDate}
-                    onChange={(e) => setNewStartDate(e.target.value)}
+                  <select
+                    value={newSupplierId}
+                    onChange={(e) => setNewSupplierId(e.target.value)}
                     required
                     className="h-10 px-3 rounded-xl bg-gray-50 border border-gray-200 text-[13px] text-gray-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0051d5]/20 cursor-pointer"
+                  >
+                    {suppliers.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.razaoSocial} ({s.cnpj})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Título / Objeto */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-[12px] font-bold text-[#0b1c30]">
+                    Título / Objeto do Contrato *
+                  </label>
+                  <input
+                    type="text"
+                    value={newTitle}
+                    onChange={(e) => setNewTitle(e.target.value)}
+                    placeholder="Ex: Fornecimento e Licenciamento Enterprise Cloud"
+                    required
+                    className="h-10 px-3 rounded-xl bg-gray-50 border border-gray-200 text-[13px] text-gray-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0051d5]/20"
                   />
                 </div>
 
+                {/* Processo Interno */}
                 <div className="flex flex-col gap-1">
                   <label className="text-[12px] font-bold text-[#0b1c30]">
-                    Data de Término *
+                    Nº do Processo / Referência Interna
                   </label>
                   <input
-                    type="date"
-                    value={newEndDate}
-                    onChange={(e) => setNewEndDate(e.target.value)}
-                    required
-                    className="h-10 px-3 rounded-xl bg-gray-50 border border-gray-200 text-[13px] text-gray-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0051d5]/20 cursor-pointer"
-                  />
-                </div>
-              </div>
-
-              {/* Valores e Periodicidade */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="flex flex-col gap-1">
-                  <label className="text-[12px] font-bold text-[#0b1c30]">
-                    Valor Global (R$) *
-                  </label>
-                  <input
-                    type="number"
-                    value={newTotalValue}
-                    onChange={(e) => setNewTotalValue(e.target.value)}
-                    required
-                    min="1"
+                    type="text"
+                    value={newInternalId}
+                    onChange={(e) => setNewInternalId(e.target.value)}
+                    placeholder="#9948-25"
                     className="h-10 px-3 rounded-xl bg-gray-50 border border-gray-200 text-[13px] font-mono text-gray-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0051d5]/20"
                   />
                 </div>
 
+                {/* Datas de Vigência */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[12px] font-bold text-[#0b1c30]">
+                      Data de Início *
+                    </label>
+                    <input
+                      type="date"
+                      value={newStartDate}
+                      onChange={(e) => setNewStartDate(e.target.value)}
+                      required
+                      className="h-10 px-3 rounded-xl bg-gray-50 border border-gray-200 text-[13px] text-gray-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0051d5]/20 cursor-pointer"
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[12px] font-bold text-[#0b1c30]">
+                      Data de Término *
+                    </label>
+                    <input
+                      type="date"
+                      value={newEndDate}
+                      onChange={(e) => setNewEndDate(e.target.value)}
+                      required
+                      className="h-10 px-3 rounded-xl bg-gray-50 border border-gray-200 text-[13px] text-gray-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0051d5]/20 cursor-pointer"
+                    />
+                  </div>
+                </div>
+
+                {/* Valores e Periodicidade */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[12px] font-bold text-[#0b1c30]">
+                      Valor Global (R$) *
+                    </label>
+                    <input
+                      type="number"
+                      value={newTotalValue}
+                      onChange={(e) => setNewTotalValue(e.target.value)}
+                      required
+                      min="1"
+                      className="h-10 px-3 rounded-xl bg-gray-50 border border-gray-200 text-[13px] font-mono text-gray-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0051d5]/20"
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[12px] font-bold text-[#0b1c30]">
+                      Periodicidade
+                    </label>
+                    <select
+                      value={newPeriodicity}
+                      onChange={handlePeriodicityChange}
+                      className="h-10 px-3 rounded-xl bg-gray-50 border border-gray-200 text-[13px] text-gray-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0051d5]/20 cursor-pointer"
+                    >
+                      <option value="mensal">Mensal</option>
+                      <option value="anual">Anual</option>
+                      <option value="demanda">Por Demanda</option>
+                      <option value="plurianual">Plurianual</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Upload do Documento / Drag & Drop */}
                 <div className="flex flex-col gap-1">
                   <label className="text-[12px] font-bold text-[#0b1c30]">
-                    Periodicidade
+                    Minuta / Contrato Digitalizado (PDF)
                   </label>
-                  <select
-                    value={newPeriodicity}
-                    onChange={(e) => setNewPeriodicity(e.target.value as any)}
-                    className="h-10 px-3 rounded-xl bg-gray-50 border border-gray-200 text-[13px] text-gray-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0051d5]/20 cursor-pointer"
+                  <div
+                    onClick={() => {
+                      setIsUploading(true);
+                      setTimeout(() => {
+                        setIsUploading(false);
+                        setUploadedFileName('Minuta_Contratual_OCR_Assinada.pdf');
+                        showToast('Documento anexado com verificação OCR!');
+                      }, 800);
+                    }}
+                    className="p-4 border-2 border-dashed border-gray-300 hover:border-[#0051d5] rounded-2xl flex flex-col items-center justify-center text-center cursor-pointer transition-all bg-gray-50/60 hover:bg-[#eff4ff]/40"
                   >
-                    <option value="mensal">Mensal</option>
-                    <option value="anual">Anual</option>
-                    <option value="demanda">Por Demanda</option>
-                    <option value="plurianual">Plurianual</option>
-                  </select>
+                    <span className="material-symbols-outlined text-[32px] text-[#0051d5]">
+                      cloud_upload
+                    </span>
+                    <span className="text-[12px] font-bold text-gray-700 mt-1">
+                      {uploadedFileName || 'Solte o arquivo PDF aqui ou clique para selecionar'}
+                    </span>
+                    <span className="text-[10px] text-gray-400 mt-0.5">
+                      Processamento OCR e extração por IA automáticos
+                    </span>
+                  </div>
                 </div>
-              </div>
 
-              {/* Upload do Documento / Drag & Drop */}
-              <div className="flex flex-col gap-1">
-                <label className="text-[12px] font-bold text-[#0b1c30]">
-                  Minuta / Contrato Digitalizado (PDF)
-                </label>
-                <div
-                  onClick={() => {
-                    setIsUploading(true);
-                    setTimeout(() => {
-                      setIsUploading(false);
-                      setUploadedFileName('Minuta_Contratual_OCR_Assinada.pdf');
-                      showToast('Documento anexado com verificação OCR!');
-                    }, 800);
-                  }}
-                  className="p-4 border-2 border-dashed border-gray-300 hover:border-[#0051d5] rounded-2xl flex flex-col items-center justify-center text-center cursor-pointer transition-all bg-gray-50/60 hover:bg-[#eff4ff]/40"
-                >
-                  <span className="material-symbols-outlined text-[32px] text-[#0051d5]">
-                    cloud_upload
-                  </span>
-                  <span className="text-[12px] font-bold text-gray-700 mt-1">
-                    {uploadedFileName || 'Solte o arquivo PDF aqui ou clique para selecionar'}
-                  </span>
-                  <span className="text-[10px] text-gray-400 mt-0.5">
-                    Processamento OCR e extração por IA automáticos
-                  </span>
-                </div>
-              </div>
-
-              {/* Campo E-mail de notificação */}
-              <div className="flex flex-col gap-1.5 p-3.5 bg-[#f8fafc] rounded-2xl border border-gray-200/80">
-                <label htmlFor="input-new-notification-email" className="text-[12px] font-bold text-[#0b1c30] flex items-center justify-between">
-                  <span className="flex items-center gap-1.5">
-                    <span className="material-symbols-outlined text-[16px] text-[#0051d5]">forward_to_inbox</span>
-                    E-mail de notificação
-                  </span>
-                  <span className="text-[10px] text-[#0051d5] font-semibold bg-blue-50 px-2 py-0.5 rounded-md border border-blue-200/60">
-                    Alertas Automáticos
-                  </span>
-                </label>
-                <div className="relative">
-                  <input
-                    id="input-new-notification-email"
-                    type="email"
-                    required
-                    value={newNotificationEmail}
-                    onChange={(e) => setNewNotificationEmail(e.target.value)}
-                    placeholder="ex: gestor.contratos@empresa.com.br"
-                    className="w-full h-10 px-3.5 pl-9 rounded-xl border border-gray-300 text-[13px] text-[#0b1c30] focus:outline-none focus:ring-2 focus:ring-[#0051d5]/20 focus:border-[#0051d5] bg-white font-medium"
-                  />
-                  <span className="material-symbols-outlined text-[18px] text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none">
-                    alternate_email
-                  </span>
-                </div>
-                <p className="text-[10px] text-gray-500 leading-tight mt-0.5">
-                  Este endereço receberá avisos automatizados de vencimento de vigência e atualizações de status.
-                </p>
-              </div>
-
-              {/* Checkbox Assinado */}
-              <div className="p-3 bg-[#eff4ff]/60 rounded-xl border border-[#dce9ff] flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    id="chkSigned"
-                    checked={newIsSigned}
-                    onChange={(e) => setNewIsSigned(e.target.checked)}
-                    className="w-4 h-4 rounded text-[#0051d5] focus:ring-[#0051d5] cursor-pointer"
-                  />
-                  <label htmlFor="chkSigned" className="text-[12px] font-semibold text-[#0b1c30] cursor-pointer">
-                    Contrato já está assinado digitalmente?
+                {/* Campo E-mail de notificação */}
+                <div className="flex flex-col gap-1.5 p-3.5 bg-[#f8fafc] rounded-2xl border border-gray-200/80">
+                  <label htmlFor="input-new-notification-email" className="text-[12px] font-bold text-[#0b1c30] flex items-center justify-between">
+                    <span className="flex items-center gap-1.5">
+                      <span className="material-symbols-outlined text-[16px] text-[#0051d5]">forward_to_inbox</span>
+                      E-mail de notificação
+                    </span>
+                    <span className="text-[10px] text-[#0051d5] font-semibold bg-blue-50 px-2 py-0.5 rounded-md border border-blue-200/60">
+                      Alertas Automáticos
+                    </span>
                   </label>
+                  <div className="relative">
+                    <input
+                      id="input-new-notification-email"
+                      type="email"
+                      required
+                      value={newNotificationEmail}
+                      onChange={(e) => setNewNotificationEmail(e.target.value)}
+                      placeholder="ex: gestor.contratos@empresa.com.br"
+                      className="w-full h-10 px-3.5 pl-9 rounded-xl border border-gray-300 text-[13px] text-[#0b1c30] focus:outline-none focus:ring-2 focus:ring-[#0051d5]/20 focus:border-[#0051d5] bg-white font-medium"
+                    />
+                    <span className="material-symbols-outlined text-[18px] text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none">
+                      alternate_email
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-gray-500 leading-tight mt-0.5">
+                    Este endereço receberá avisos automatizados de vencimento de vigência e atualizações de status.
+                  </p>
                 </div>
-                <span className="text-[10px] text-gray-500">
-                  {newIsSigned ? 'ICP-Brasil / DocuSign' : 'Entra na fila de rubricas'}
-                </span>
+
+                {/* Checkbox Assinado */}
+                <div className="p-3 bg-[#eff4ff]/60 rounded-xl border border-[#dce9ff] flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="chkSigned"
+                      checked={newIsSigned}
+                      onChange={(e) => setNewIsSigned(e.target.checked)}
+                      className="w-4 h-4 rounded text-[#0051d5] focus:ring-[#0051d5] cursor-pointer"
+                    />
+                    <label htmlFor="chkSigned" className="text-[12px] font-semibold text-[#0b1c30] cursor-pointer">
+                      Contrato já está assinado digitalmente?
+                    </label>
+                  </div>
+                  <span className="text-[10px] text-gray-500">
+                    {newIsSigned ? 'ICP-Brasil / DocuSign' : 'Entra na fila de rubricas'}
+                  </span>
+                </div>
               </div>
 
-              {/* Footer Actions */}
-              <div className="pt-4 border-t border-gray-100 flex items-center justify-end gap-2 sticky bottom-0 bg-white z-10">
+              {/* Footer Actions - Fixed Bottom with Solid Background */}
+              <div className="p-4 border-t border-gray-200 flex items-center justify-end gap-2 bg-white shrink-0 shadow-xs">
                 <button
                   type="button"
                   onClick={() => setIsDrawerOpen(false)}

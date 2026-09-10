@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import DOMPurify from 'dompurify';
 import { SimulatedAlertEmail } from '../utils/alertSimulator';
 
 interface SimulatedAlertModalProps {
@@ -15,28 +16,125 @@ export const SimulatedAlertModal: React.FC<SimulatedAlertModalProps> = ({
   onSendAnother,
 }) => {
   const [activeTab, setActiveTab] = useState<'preview' | 'headers' | 'payload'>('preview');
-  const [copied, setCopied] = useState(false);
+  const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'error'>('idle');
+  const [copyError, setCopyError] = useState<string | null>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const copyTimeoutRef = useRef<NodeJS.Timeout | number | null>(null);
+  const errorTimeoutRef = useRef<NodeJS.Timeout | number | null>(null);
+
+  // Limpeza de timers para prevenir vazamento de memória e setState em componente desmontado
+  useEffect(() => {
+    return () => {
+      if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
+      if (errorTimeoutRef.current) clearTimeout(errorTimeoutRef.current);
+    };
+  }, []);
+
+  // Limpa timers e reseta estados temporários quando o modal for fechado
+  useEffect(() => {
+    if (!isOpen) {
+      if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
+      if (errorTimeoutRef.current) clearTimeout(errorTimeoutRef.current);
+      setCopyStatus('idle');
+      setCopyError(null);
+    }
+  }, [isOpen]);
+
+  // Acessibilidade: fechar ao pressionar a tecla Escape (ESC)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!isOpen) return;
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
+  // Acessibilidade: mover foco para o botão de fechamento ao abrir
+  useEffect(() => {
+    if (isOpen) {
+      const timer = setTimeout(() => {
+        closeButtonRef.current?.focus();
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [isOpen]);
+
+  // Segurança (XSS): sanitização rigorosa do HTML do e-mail com DOMPurify
+  const sanitizedHtml = useMemo(() => {
+    if (!alertEmail?.htmlContent) return '';
+    return DOMPurify.sanitize(alertEmail.htmlContent, {
+      USE_PROFILES: { html: true },
+      FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'applet'],
+      FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'onfocus'],
+    });
+  }, [alertEmail?.htmlContent]);
 
   if (!isOpen || !alertEmail) return null;
 
-  const handleCopy = () => {
+  // Tratamento assíncrono e resiliente para área de transferência
+  const handleCopy = async () => {
     const textToCopy = `Assunto: ${alertEmail.subject}\nPara: ${alertEmail.to}\nCC: ${alertEmail.cc.join(', ')}\nData: ${alertEmail.dispatchedAt}\n\nResumo:\n${alertEmail.summaryText}`;
-    navigator.clipboard.writeText(textToCopy);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2500);
+
+    try {
+      if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function' && window.isSecureContext) {
+        await navigator.clipboard.writeText(textToCopy);
+        setCopyStatus('copied');
+        setCopyError(null);
+      } else {
+        // Fallback para navegadores sem Clipboard API ou sem contexto seguro
+        const textArea = document.createElement('textarea');
+        textArea.value = textToCopy;
+        textArea.style.position = 'fixed';
+        textArea.style.opacity = '0';
+        textArea.style.left = '-9999px';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        const successful = document.execCommand('copy');
+        document.body.removeChild(textArea);
+
+        if (successful) {
+          setCopyStatus('copied');
+          setCopyError(null);
+        } else {
+          throw new Error('Falha ao copiar com execCommand');
+        }
+      }
+    } catch (err) {
+      console.warn('Erro ao copiar dados para a área de transferência:', err);
+      setCopyStatus('error');
+      setCopyError('Não foi possível copiar automaticamente.');
+      if (errorTimeoutRef.current) clearTimeout(errorTimeoutRef.current);
+      errorTimeoutRef.current = setTimeout(() => {
+        setCopyError(null);
+      }, 3500);
+    }
+
+    if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
+    copyTimeoutRef.current = setTimeout(() => {
+      setCopyStatus((prev) => (prev === 'copied' ? 'idle' : prev));
+    }, 2500);
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-200">
-      {/* Backdrop */}
+      {/* Backdrop com clique para fechar */}
       <div
         className="fixed inset-0 bg-[#0b1c30]/70 backdrop-blur-sm transition-opacity"
         onClick={onClose}
+        aria-hidden="true"
       />
 
-      {/* Modal Card */}
+      {/* Modal Card com atributos semânticos de acessibilidade */}
       <div
         id="modal-simulated-alert"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="modal-simulated-alert-title"
         className="relative w-full max-w-3xl max-h-[92vh] bg-white rounded-3xl shadow-2xl border border-[#e5eeff] overflow-hidden flex flex-col z-10 animate-in zoom-in-95 duration-200"
       >
         {/* Modal Top Header with SMTP Status */}
@@ -47,9 +145,12 @@ export const SimulatedAlertModal: React.FC<SimulatedAlertModalProps> = ({
             </div>
             <div>
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-[16px] font-bold text-white tracking-tight">
+                <h2
+                  id="modal-simulated-alert-title"
+                  className="text-[16px] font-bold text-white tracking-tight"
+                >
                   Simulação de Disparo de Alerta por E-mail
-                </span>
+                </h2>
                 <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 text-[11px] font-bold">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
                   SMTP 250 OK • Entregue
@@ -63,10 +164,12 @@ export const SimulatedAlertModal: React.FC<SimulatedAlertModalProps> = ({
           </div>
 
           <button
+            ref={closeButtonRef}
             type="button"
             onClick={onClose}
-            className="p-1.5 rounded-xl text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
-            title="Fechar Modal"
+            className="p-1.5 rounded-xl text-gray-400 hover:text-white hover:bg-white/10 transition-colors focus:outline-none focus:ring-2 focus:ring-white/40"
+            title="Fechar Modal (Esc)"
+            aria-label="Fechar Modal de Alerta"
           >
             <span className="material-symbols-outlined text-[20px]">close</span>
           </button>
@@ -172,16 +275,47 @@ export const SimulatedAlertModal: React.FC<SimulatedAlertModalProps> = ({
             </button>
           </div>
 
-          <button
-            type="button"
-            onClick={handleCopy}
-            className="h-8 px-3 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 text-[11px] font-bold flex items-center gap-1 transition-colors"
-          >
-            <span className="material-symbols-outlined text-[15px]">
-              {copied ? 'check' : 'content_copy'}
-            </span>
-            <span>{copied ? 'Copiado!' : 'Copiar E-mail'}</span>
-          </button>
+          <div className="flex items-center gap-2">
+            {copyError && (
+              <span className="text-[11px] text-red-600 bg-red-50 border border-red-200 px-2 py-0.5 rounded-md animate-in fade-in">
+                {copyError}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={handleCopy}
+              className={`h-8 px-3 rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-all ${
+                copyStatus === 'copied'
+                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                  : copyStatus === 'error'
+                  ? 'bg-red-100 text-red-800 border border-red-300'
+                  : 'bg-gray-100 hover:bg-gray-200 text-gray-700 border border-transparent'
+              }`}
+              title={copyError || 'Copiar resumo do e-mail para a área de transferência'}
+              aria-label={
+                copyStatus === 'copied'
+                  ? 'E-mail copiado com sucesso'
+                  : copyStatus === 'error'
+                  ? 'Erro ao copiar e-mail'
+                  : 'Copiar informações do e-mail'
+              }
+            >
+              <span className="material-symbols-outlined text-[15px]">
+                {copyStatus === 'copied'
+                  ? 'check'
+                  : copyStatus === 'error'
+                  ? 'error'
+                  : 'content_copy'}
+              </span>
+              <span>
+                {copyStatus === 'copied'
+                  ? 'Copiado!'
+                  : copyStatus === 'error'
+                  ? 'Erro ao copiar'
+                  : 'Copiar E-mail'}
+              </span>
+            </button>
+          </div>
         </div>
 
         {/* Tab Content Body (Scrollable) */}
@@ -189,7 +323,7 @@ export const SimulatedAlertModal: React.FC<SimulatedAlertModalProps> = ({
           {activeTab === 'preview' && (
             <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
               <div
-                dangerouslySetInnerHTML={{ __html: alertEmail.htmlContent }}
+                dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
                 className="prose prose-sm max-w-none"
               />
 

@@ -214,7 +214,6 @@ export interface IntegrationConnector {
 }
 
 export interface SystemSettings {
-  darkMode?: boolean;
   notice30Days: boolean;
   notice60Days: boolean;
   signaturePending7Days: boolean;

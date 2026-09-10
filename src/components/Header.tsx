@@ -1,6 +1,7 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import { ASSETS } from '../constants/assets';
 import { NotificationItem, UserRole, UserProfile } from '../types';
+import { useClickOutside } from '../hooks/useClickOutside';
 
 interface HeaderProps {
   currentRole: UserRole;
@@ -67,18 +68,8 @@ export const Header: React.FC<HeaderProps> = ({
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
-        setShowNotifications(false);
-      }
-      if (profileRef.current && !profileRef.current.contains(e.target as Node)) {
-        setShowProfileMenu(false);
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+  useClickOutside(notifRef, () => setShowNotifications(false), showNotifications);
+  useClickOutside(profileRef, () => setShowProfileMenu(false), showProfileMenu);
 
   return (
     <header className="h-16 w-full shrink-0 bg-[#f8f9ff]/90 backdrop-blur-xl border-b border-[#e5eeff] shadow-[0_1px_8px_rgba(0,0,0,0.03)] z-20 flex items-center justify-between px-3 sm:px-6">
@@ -109,16 +100,16 @@ export const Header: React.FC<HeaderProps> = ({
         )}
 
         {/* Breadcrumb */}
-        <div className="hidden sm:flex items-center gap-1.5 text-[12px] text-[#45464d]">
-          <span className="material-symbols-outlined text-[18px] text-[#76777d]">folder_open</span>
+        <div className="hidden sm:flex items-center gap-1.5 text-[12px] text-[#45464d] dark:text-slate-400">
+          <span className="material-symbols-outlined text-[18px] text-[#76777d] dark:text-slate-400">folder_open</span>
           <span>{breadcrumb.section}</span>
-          <span className="material-symbols-outlined text-[14px] text-[#c6c6cd]">chevron_right</span>
-          <span className="text-[12px] text-[#0b1c30] font-semibold truncate max-w-xs">{breadcrumb.page}</span>
+          <span className="material-symbols-outlined text-[14px] text-[#c6c6cd] dark:text-slate-600">chevron_right</span>
+          <span className="text-[12px] text-[#0b1c30] dark:text-slate-100 font-semibold truncate max-w-xs">{breadcrumb.page}</span>
         </div>
 
         {/* Search Bar */}
         <div className="relative flex items-center">
-          <span className="material-symbols-outlined absolute left-2.5 text-[#76777d] text-[18px] pointer-events-none">
+          <span className="material-symbols-outlined absolute left-2.5 text-[#76777d] dark:text-slate-400 text-[18px] pointer-events-none">
             search
           </span>
           <input
@@ -131,12 +122,13 @@ export const Header: React.FC<HeaderProps> = ({
               }
             }}
             placeholder="Buscar contratos... ⌘K"
-            className="w-36 sm:w-64 md:w-80 h-9 pl-8 pr-7 rounded-xl bg-[#eff4ff] text-[13px] text-[#0b1c30] placeholder:text-[#45464d]/70 focus:outline-none focus:bg-white focus:ring-2 focus:ring-[#0051d5]/20 border border-transparent focus:border-[#0051d5]/30 transition-all"
+            className="w-36 sm:w-64 md:w-80 h-9 pl-8 pr-7 rounded-xl bg-[#eff4ff] dark:bg-[#162033] text-[13px] text-[#0b1c30] dark:text-slate-100 placeholder:text-[#45464d]/70 dark:placeholder:text-slate-400 focus:outline-none focus:bg-white dark:focus:bg-[#1e293b] focus:ring-2 focus:ring-[#0051d5]/20 dark:focus:ring-blue-500/30 border border-transparent dark:border-slate-700/60 focus:border-[#0051d5]/30 dark:focus:border-blue-500/50 transition-all font-medium"
           />
           {effectiveSearch && (
             <button
               onClick={() => handleSearchChange('')}
-              className="absolute right-2.5 text-gray-400 hover:text-gray-600 text-xs"
+              className="absolute right-2.5 text-gray-400 hover:text-gray-600 dark:text-slate-400 dark:hover:text-slate-200 text-xs transition-colors"
+              title="Limpar busca"
             >
               <span className="material-symbols-outlined text-[16px]">close</span>
             </button>

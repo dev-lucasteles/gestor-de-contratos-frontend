@@ -36,6 +36,9 @@ export function calculateDaysRemaining(
         }
         return diffDays;
       }
+
+      // If diffDays is today or in the past, contract is due or expired
+      return 0;
     }
   }
 

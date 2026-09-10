@@ -11,6 +11,10 @@ interface AuditLogViewProps {
   onRoleChange?: (role: UserRole) => void;
 }
 
+type EntityFilter = 'todos' | 'contrato' | 'fornecedor' | 'seguranca';
+type ActionFilter = 'todos' | 'add' | 'update' | 'delete' | 'warning' | 'security';
+type PeriodFilter = 'todos' | 'hoje' | '7dias' | '30dias';
+
 export const AuditLogView: React.FC<AuditLogViewProps> = ({
   logs,
   onSelectContract,
@@ -21,14 +25,42 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({
   onRoleChange,
 }) => {
   const [searchTerm, setSearchTerm] = useState(initialFilterResource);
-  const [entityFilter, setEntityFilter] = useState<'todos' | 'contrato' | 'fornecedor' | 'seguranca'>('todos');
-  const [actionFilter, setActionFilter] = useState<'todos' | 'add' | 'update' | 'delete' | 'warning' | 'security'>('todos');
+  const [entityFilter, setEntityFilter] = useState<EntityFilter>('todos');
+  const [actionFilter, setActionFilter] = useState<ActionFilter>('todos');
   const [userFilter, setUserFilter] = useState<string>('todos');
   const [severityFilter, setSeverityFilter] = useState<'todos' | 'baixo' | 'medio' | 'alto'>('todos');
-  const [periodFilter, setPeriodFilter] = useState<'todos' | 'hoje' | '7dias' | '30dias'>('todos');
+  const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('todos');
   const [viewMode, setViewMode] = useState<'tabela' | 'timeline'>('tabela');
   const [selectedLog, setSelectedLog] = useState<AuditLog | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const handleEntityFilterChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const val = e.target.value;
+    if (val === 'todos' || val === 'contrato' || val === 'fornecedor' || val === 'seguranca') {
+      setEntityFilter(val);
+    }
+  };
+
+  const handleActionFilterChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const val = e.target.value;
+    if (
+      val === 'todos' ||
+      val === 'add' ||
+      val === 'update' ||
+      val === 'delete' ||
+      val === 'warning' ||
+      val === 'security'
+    ) {
+      setActionFilter(val);
+    }
+  };
+
+  const handlePeriodFilterChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const val = e.target.value;
+    if (val === 'todos' || val === 'hoje' || val === '7dias' || val === '30dias') {
+      setPeriodFilter(val);
+    }
+  };
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -130,6 +162,45 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({
     severityFilter !== 'todos' ||
     periodFilter !== 'todos';
 
+  // Safe copy to clipboard with fallback for iframes
+  const safeCopyToClipboard = (text: string, label: string) => {
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      navigator.clipboard.writeText(text).then(() => {
+        showToast(label);
+      }).catch(() => {
+        try {
+          const textArea = document.createElement('textarea');
+          textArea.value = text;
+          textArea.style.position = 'fixed';
+          textArea.style.opacity = '0';
+          document.body.appendChild(textArea);
+          textArea.focus();
+          textArea.select();
+          document.execCommand('copy');
+          document.body.removeChild(textArea);
+          showToast(label);
+        } catch {
+          showToast('Não foi possível copiar automaticamente para a área de transferência.');
+        }
+      });
+    } else {
+      try {
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        textArea.style.position = 'fixed';
+        textArea.style.opacity = '0';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+        showToast(label);
+      } catch {
+        showToast('Não foi possível copiar automaticamente para a área de transferência.');
+      }
+    }
+  };
+
   // Export to CSV
   const handleExportCSV = () => {
     const headers = ['ID', 'Data/Hora', 'Responsavel', 'Email', 'Cargo', 'Entidade', 'Recurso', 'Acao', 'Detalhes', 'IP', 'Severidade', 'Hash Integridade'];
@@ -148,14 +219,16 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({
       `"${l.integrityHash || ''}"`,
     ]);
 
-    const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
+    const csvContent = '\uFEFF' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
+    link.setAttribute('href', url);
     link.setAttribute('download', `trilha_auditoria_maiscontratos_riomais_${new Date().toISOString().split('T')[0]}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
 
     showToast(`${filteredLogs.length} registros exportados em CSV com sucesso!`);
   };
@@ -171,13 +244,16 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({
       protocoloAuditoria: `AUD-${Date.now()}`,
       logs: filteredLogs,
     };
-    const jsonStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(exportData, null, 2));
+    const jsonStr = JSON.stringify(exportData, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.setAttribute('href', jsonStr);
+    link.setAttribute('href', url);
     link.setAttribute('download', `auditoria_forense_${new Date().toISOString().split('T')[0]}.json`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
 
     showToast('Dump forense JSON exportado com chaves criptográficas!');
   };
@@ -256,15 +332,15 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({
           {/* Quick Actions */}
           <div className="flex items-center gap-2 flex-wrap">
             {/* View Mode Switcher */}
-            <div className="flex items-center bg-gray-100 p-1 rounded-xl border border-gray-200">
+            <div className="flex items-center bg-gray-100 dark:bg-slate-800 p-1 rounded-xl border border-gray-200 dark:border-slate-700">
               <button
                 type="button"
                 id="btn-view-mode-table"
                 onClick={() => setViewMode('tabela')}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-all ${
                   viewMode === 'tabela'
-                    ? 'bg-white text-[#0051d5] shadow-xs'
-                    : 'text-gray-600 hover:text-gray-900'
+                    ? 'bg-white dark:bg-blue-600 text-[#0051d5] dark:text-white shadow-xs'
+                    : 'text-gray-600 dark:text-slate-400 hover:text-gray-900 dark:hover:text-slate-200'
                 }`}
               >
                 <span className="material-symbols-outlined text-[16px]">table_rows</span>
@@ -276,8 +352,8 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({
                 onClick={() => setViewMode('timeline')}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-all ${
                   viewMode === 'timeline'
-                    ? 'bg-white text-[#0051d5] shadow-xs'
-                    : 'text-gray-600 hover:text-gray-900'
+                    ? 'bg-white dark:bg-blue-600 text-[#0051d5] dark:text-white shadow-xs'
+                    : 'text-gray-600 dark:text-slate-400 hover:text-gray-900 dark:hover:text-slate-200'
                 }`}
               >
                 <span className="material-symbols-outlined text-[16px]">timeline</span>
@@ -290,10 +366,10 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({
               type="button"
               id="btn-export-audit-csv"
               onClick={handleExportCSV}
-              className="h-9 px-3.5 rounded-xl bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 text-[12px] font-semibold transition-all flex items-center gap-1.5 shadow-xs"
+              className="h-9 px-3.5 rounded-xl bg-white dark:bg-[#162033] border border-gray-200 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-800 text-gray-700 dark:text-slate-200 text-[12px] font-semibold transition-all flex items-center gap-1.5 shadow-xs"
               title="Exportar registros filtrados em planilha CSV"
             >
-              <span className="material-symbols-outlined text-[18px] text-[#0051d5]">download</span>
+              <span className="material-symbols-outlined text-[18px] text-[#0051d5] dark:text-blue-400">download</span>
               <span>Exportar CSV</span>
             </button>
 
@@ -301,10 +377,10 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({
               type="button"
               id="btn-export-audit-json"
               onClick={handleExportJSON}
-              className="h-9 px-3.5 rounded-xl bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 text-[12px] font-semibold transition-all flex items-center gap-1.5 shadow-xs"
+              className="h-9 px-3.5 rounded-xl bg-white dark:bg-[#162033] border border-gray-200 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-800 text-gray-700 dark:text-slate-200 text-[12px] font-semibold transition-all flex items-center gap-1.5 shadow-xs"
               title="Exportar pacote forense JSON com assinaturas"
             >
-              <span className="material-symbols-outlined text-[18px] text-amber-600">data_object</span>
+              <span className="material-symbols-outlined text-[18px] text-amber-600 dark:text-amber-400">data_object</span>
               <span>Dump JSON</span>
             </button>
           </div>
@@ -312,43 +388,43 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({
 
         {/* Metrics KPI Cards */}
         <div className="max-w-7xl mx-auto mt-6 grid grid-cols-2 lg:grid-cols-4 gap-3.5">
-          <div className="bg-[#f8faff] p-3.5 rounded-xl border border-blue-100 flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-[#0051d5]/10 text-[#0051d5] flex items-center justify-center shrink-0">
+          <div className="bg-white dark:bg-[#0f172a] p-3.5 rounded-xl border border-gray-200 dark:border-slate-800 flex items-center gap-3 shadow-xs">
+            <div className="w-10 h-10 rounded-lg bg-blue-50 dark:bg-blue-950/70 text-[#0051d5] dark:text-blue-400 flex items-center justify-center shrink-0 border border-transparent dark:border-blue-800/40">
               <span className="material-symbols-outlined text-[20px]">fact_check</span>
             </div>
             <div>
-              <span className="text-[11px] font-medium text-gray-500 uppercase tracking-wider block">Total de Eventos</span>
-              <span className="text-xl font-bold text-[#0b1c30]">{stats.total}</span>
+              <span className="text-[11px] font-medium text-gray-500 dark:text-slate-400 uppercase tracking-wider block">Total de Eventos</span>
+              <span className="text-xl font-bold text-[#0b1c30] dark:text-slate-100">{stats.total}</span>
             </div>
           </div>
 
-          <div className="bg-white p-3.5 rounded-xl border border-gray-200 flex items-center gap-3 shadow-xs">
-            <div className="w-10 h-10 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+          <div className="bg-white dark:bg-[#0f172a] p-3.5 rounded-xl border border-gray-200 dark:border-slate-800 flex items-center gap-3 shadow-xs">
+            <div className="w-10 h-10 rounded-lg bg-indigo-50 dark:bg-indigo-950/70 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0 border border-transparent dark:border-indigo-800/40">
               <span className="material-symbols-outlined text-[20px]">description</span>
             </div>
             <div>
-              <span className="text-[11px] font-medium text-gray-500 uppercase tracking-wider block">Alterações em Contratos</span>
-              <span className="text-xl font-bold text-indigo-700">{stats.contractChanges}</span>
+              <span className="text-[11px] font-medium text-gray-500 dark:text-slate-400 uppercase tracking-wider block">Alterações em Contratos</span>
+              <span className="text-xl font-bold text-indigo-700 dark:text-indigo-400">{stats.contractChanges}</span>
             </div>
           </div>
 
-          <div className="bg-white p-3.5 rounded-xl border border-gray-200 flex items-center gap-3 shadow-xs">
-            <div className="w-10 h-10 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+          <div className="bg-white dark:bg-[#0f172a] p-3.5 rounded-xl border border-gray-200 dark:border-slate-800 flex items-center gap-3 shadow-xs">
+            <div className="w-10 h-10 rounded-lg bg-emerald-50 dark:bg-emerald-950/70 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 border border-transparent dark:border-emerald-800/40">
               <span className="material-symbols-outlined text-[20px]">domain</span>
             </div>
             <div>
-              <span className="text-[11px] font-medium text-gray-500 uppercase tracking-wider block">Alterações em Fornecedores</span>
-              <span className="text-xl font-bold text-emerald-700">{stats.supplierChanges}</span>
+              <span className="text-[11px] font-medium text-gray-500 dark:text-slate-400 uppercase tracking-wider block">Alterações em Fornecedores</span>
+              <span className="text-xl font-bold text-emerald-700 dark:text-emerald-400">{stats.supplierChanges}</span>
             </div>
           </div>
 
-          <div className="bg-white p-3.5 rounded-xl border border-gray-200 flex items-center gap-3 shadow-xs">
-            <div className="w-10 h-10 rounded-lg bg-red-50 text-[#ba1a1a] flex items-center justify-center shrink-0">
+          <div className="bg-white dark:bg-[#0f172a] p-3.5 rounded-xl border border-gray-200 dark:border-slate-800 flex items-center gap-3 shadow-xs">
+            <div className="w-10 h-10 rounded-lg bg-red-50 dark:bg-red-950/70 text-[#ba1a1a] dark:text-red-400 flex items-center justify-center shrink-0 border border-transparent dark:border-red-800/40">
               <span className="material-symbols-outlined text-[20px]">warning</span>
             </div>
             <div>
-              <span className="text-[11px] font-medium text-gray-500 uppercase tracking-wider block">Ações Críticas / Exclusões</span>
-              <span className="text-xl font-bold text-[#ba1a1a]">{stats.highSeverity}</span>
+              <span className="text-[11px] font-medium text-gray-500 dark:text-slate-400 uppercase tracking-wider block">Ações Críticas / Exclusões</span>
+              <span className="text-xl font-bold text-[#ba1a1a] dark:text-red-400">{stats.highSeverity}</span>
             </div>
           </div>
         </div>
@@ -356,11 +432,11 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({
 
       {/* Filter and Search Bar */}
       <div className="max-w-7xl mx-auto px-6 sm:px-8 mt-6">
-        <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-xs">
+        <div className="bg-white dark:bg-[#0f172a] rounded-2xl border border-gray-200 dark:border-slate-800 p-4 shadow-xs">
           <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
             {/* Search Input */}
             <div className="md:col-span-4 relative">
-              <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 text-[18px]">
+              <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 dark:text-slate-400 text-[18px]">
                 search
               </span>
               <input
@@ -369,13 +445,13 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 placeholder="Buscar por código, empresa, usuário, ação..."
-                className="w-full h-10 pl-10 pr-4 rounded-xl bg-gray-50 border border-gray-200 text-[13px] text-gray-800 placeholder-gray-400 focus:outline-none focus:border-[#0051d5] focus:bg-white transition-all"
+                className="w-full h-10 pl-10 pr-4 rounded-xl bg-gray-50 dark:bg-[#162033] border border-gray-200 dark:border-slate-700 text-[13px] text-gray-800 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-400 focus:outline-none focus:border-[#0051d5] dark:focus:border-blue-500/50 focus:bg-white dark:focus:bg-[#1e293b] transition-all"
               />
               {searchTerm && (
                 <button
                   type="button"
                   onClick={() => setSearchTerm('')}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:text-slate-400 dark:hover:text-slate-200"
                 >
                   <span className="material-symbols-outlined text-[16px]">close</span>
                 </button>
@@ -387,13 +463,13 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({
               <select
                 id="audit-entity-filter"
                 value={entityFilter}
-                onChange={(e) => setEntityFilter(e.target.value as any)}
-                className="w-full h-10 px-3 rounded-xl bg-gray-50 border border-gray-200 text-[12px] font-medium text-gray-700 focus:outline-none focus:border-[#0051d5] focus:bg-white transition-all"
+                onChange={handleEntityFilterChange}
+                className="w-full h-10 px-3 rounded-xl bg-gray-50 dark:bg-[#162033] border border-gray-200 dark:border-slate-700 text-[12px] font-medium text-gray-700 dark:text-slate-200 focus:outline-none focus:border-[#0051d5] dark:focus:border-blue-500/50 focus:bg-white dark:focus:bg-[#1e293b] transition-all cursor-pointer"
               >
-                <option value="todos">Todas Entidades</option>
-                <option value="contrato">Contratos</option>
-                <option value="fornecedor">Fornecedores</option>
-                <option value="seguranca">Segurança & Sistema</option>
+                <option value="todos" className="dark:bg-[#162033] dark:text-slate-200">Todas Entidades</option>
+                <option value="contrato" className="dark:bg-[#162033] dark:text-slate-200">Contratos</option>
+                <option value="fornecedor" className="dark:bg-[#162033] dark:text-slate-200">Fornecedores</option>
+                <option value="seguranca" className="dark:bg-[#162033] dark:text-slate-200">Segurança & Sistema</option>
               </select>
             </div>
 
@@ -402,15 +478,15 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({
               <select
                 id="audit-action-filter"
                 value={actionFilter}
-                onChange={(e) => setActionFilter(e.target.value as any)}
-                className="w-full h-10 px-3 rounded-xl bg-gray-50 border border-gray-200 text-[12px] font-medium text-gray-700 focus:outline-none focus:border-[#0051d5] focus:bg-white transition-all"
+                onChange={handleActionFilterChange}
+                className="w-full h-10 px-3 rounded-xl bg-gray-50 dark:bg-[#162033] border border-gray-200 dark:border-slate-700 text-[12px] font-medium text-gray-700 dark:text-slate-200 focus:outline-none focus:border-[#0051d5] dark:focus:border-blue-500/50 focus:bg-white dark:focus:bg-[#1e293b] transition-all cursor-pointer"
               >
-                <option value="todos">Todos os Tipos de Ação</option>
-                <option value="add">Criação / Cadastro</option>
-                <option value="update">Termo Aditivo / Alteração</option>
-                <option value="delete">Exclusão</option>
-                <option value="security">Assinatura / Homologação</option>
-                <option value="warning">Alertas / Bloqueios</option>
+                <option value="todos" className="dark:bg-[#162033] dark:text-slate-200">Todos os Tipos de Ação</option>
+                <option value="add" className="dark:bg-[#162033] dark:text-slate-200">Criação / Cadastro</option>
+                <option value="update" className="dark:bg-[#162033] dark:text-slate-200">Termo Aditivo / Alteração</option>
+                <option value="delete" className="dark:bg-[#162033] dark:text-slate-200">Exclusão</option>
+                <option value="security" className="dark:bg-[#162033] dark:text-slate-200">Assinatura / Homologação</option>
+                <option value="warning" className="dark:bg-[#162033] dark:text-slate-200">Alertas / Bloqueios</option>
               </select>
             </div>
 
@@ -420,11 +496,11 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({
                 id="audit-user-filter"
                 value={userFilter}
                 onChange={(e) => setUserFilter(e.target.value)}
-                className="w-full h-10 px-3 rounded-xl bg-gray-50 border border-gray-200 text-[12px] font-medium text-gray-700 focus:outline-none focus:border-[#0051d5] focus:bg-white transition-all truncate"
+                className="w-full h-10 px-3 rounded-xl bg-gray-50 dark:bg-[#162033] border border-gray-200 dark:border-slate-700 text-[12px] font-medium text-gray-700 dark:text-slate-200 focus:outline-none focus:border-[#0051d5] dark:focus:border-blue-500/50 focus:bg-white dark:focus:bg-[#1e293b] transition-all truncate cursor-pointer"
               >
-                <option value="todos">Todos os Usuários</option>
+                <option value="todos" className="dark:bg-[#162033] dark:text-slate-200">Todos os Usuários</option>
                 {uniqueUsers.map((user) => (
-                  <option key={user} value={user}>
+                  <option key={user} value={user} className="dark:bg-[#162033] dark:text-slate-200">
                     {user}
                   </option>
                 ))}
@@ -436,13 +512,13 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({
               <select
                 id="audit-period-filter"
                 value={periodFilter}
-                onChange={(e) => setPeriodFilter(e.target.value as any)}
-                className="w-full h-10 px-3 rounded-xl bg-gray-50 border border-gray-200 text-[12px] font-medium text-gray-700 focus:outline-none focus:border-[#0051d5] focus:bg-white transition-all"
+                onChange={handlePeriodFilterChange}
+                className="w-full h-10 px-3 rounded-xl bg-gray-50 dark:bg-[#162033] border border-gray-200 dark:border-slate-700 text-[12px] font-medium text-gray-700 dark:text-slate-200 focus:outline-none focus:border-[#0051d5] dark:focus:border-blue-500/50 focus:bg-white dark:focus:bg-[#1e293b] transition-all cursor-pointer"
               >
-                <option value="todos">Todo o Período</option>
-                <option value="hoje">Hoje</option>
-                <option value="7dias">Últimos 7 dias</option>
-                <option value="30dias">Últimos 30 dias</option>
+                <option value="todos" className="dark:bg-[#162033] dark:text-slate-200">Todo o Período</option>
+                <option value="hoje" className="dark:bg-[#162033] dark:text-slate-200">Hoje</option>
+                <option value="7dias" className="dark:bg-[#162033] dark:text-slate-200">Últimos 7 dias</option>
+                <option value="30dias" className="dark:bg-[#162033] dark:text-slate-200">Últimos 30 dias</option>
               </select>
             </div>
           </div>
@@ -765,19 +841,19 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({
 
       {/* Forensic Inspection Modal */}
       {selectedLog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 animate-in fade-in">
-          <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl border border-gray-200 max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in">
+          <div className="bg-white dark:bg-[#0f172a] rounded-2xl max-w-2xl w-full shadow-2xl border border-gray-200 dark:border-slate-800 max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95">
             {/* Modal Header */}
-            <div className="px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+            <div className="px-6 py-4 bg-gray-50 dark:bg-slate-900 border-b border-gray-200 dark:border-slate-800 flex items-center justify-between">
               <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-[#0051d5]/10 text-[#0051d5] flex items-center justify-center">
+                <div className="w-9 h-9 rounded-xl bg-[#0051d5]/10 dark:bg-blue-950/70 text-[#0051d5] dark:text-blue-400 flex items-center justify-center border border-transparent dark:border-blue-800/40">
                   <span className="material-symbols-outlined text-[20px]">policy</span>
                 </div>
                 <div>
-                  <h3 className="text-[16px] font-bold text-[#0b1c30]">
+                  <h3 className="text-[16px] font-bold text-[#0b1c30] dark:text-slate-100">
                     Registro de Auditoria Forense #{selectedLog.id}
                   </h3>
-                  <p className="text-[11px] text-gray-500 font-mono">
+                  <p className="text-[11px] text-gray-500 dark:text-slate-400 font-mono">
                     Integridade: {selectedLog.integrityHash || 'SHA256-VALIDADO-ICP'}
                   </p>
                 </div>
@@ -786,7 +862,8 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({
                 type="button"
                 id="btn-close-audit-modal"
                 onClick={() => setSelectedLog(null)}
-                className="w-8 h-8 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 flex items-center justify-center transition-colors"
+                className="w-8 h-8 rounded-lg text-gray-400 hover:text-gray-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-gray-100 dark:hover:bg-slate-800 flex items-center justify-center transition-colors"
+                title="Fechar inspeção"
               >
                 <span className="material-symbols-outlined text-[20px]">close</span>
               </button>
@@ -795,19 +872,19 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({
             {/* Modal Scrollable Body */}
             <div className="p-6 overflow-y-auto space-y-5 text-[13px]">
               {/* Section 1: Event Summary */}
-              <div className="bg-[#f8faff] rounded-xl p-4 border border-blue-100">
-                <span className="text-[11px] font-bold text-[#0051d5] uppercase tracking-wider block mb-1">
+              <div className="bg-[#f8faff] dark:bg-[#162033] rounded-xl p-4 border border-blue-100 dark:border-blue-900/40">
+                <span className="text-[11px] font-bold text-[#0051d5] dark:text-blue-400 uppercase tracking-wider block mb-1">
                   Resumo da Operação
                 </span>
-                <p className="text-[14px] font-semibold text-gray-900">{selectedLog.detail}</p>
+                <p className="text-[14px] font-semibold text-gray-900 dark:text-slate-100">{selectedLog.detail}</p>
                 <div className="mt-2.5 flex items-center gap-2 flex-wrap text-[11px]">
-                  <span className="px-2 py-0.5 rounded bg-blue-100 text-[#0051d5] font-semibold">
+                  <span className="px-2 py-0.5 rounded bg-blue-100 dark:bg-blue-950/80 text-[#0051d5] dark:text-blue-300 font-semibold border border-transparent dark:border-blue-800/50">
                     Ação: {selectedLog.action}
                   </span>
-                  <span className="px-2 py-0.5 rounded bg-gray-200 text-gray-700 font-semibold">
+                  <span className="px-2 py-0.5 rounded bg-gray-200 dark:bg-slate-800 text-gray-700 dark:text-slate-300 font-semibold">
                     Severidade: {selectedLog.severity || 'baixo'}
                   </span>
-                  <span className="px-2 py-0.5 rounded bg-gray-200 text-gray-700 font-mono">
+                  <span className="px-2 py-0.5 rounded bg-gray-200 dark:bg-slate-800 text-gray-700 dark:text-slate-300 font-mono">
                     Data: {selectedLog.timestamp}
                   </span>
                 </div>
@@ -815,34 +892,34 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({
 
               {/* Section 2: Who made the change */}
               <div>
-                <h4 className="text-[12px] font-bold text-gray-700 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                  <span className="material-symbols-outlined text-[16px] text-[#0051d5]">person</span>
+                <h4 className="text-[12px] font-bold text-gray-700 dark:text-slate-300 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-[16px] text-[#0051d5] dark:text-blue-400">person</span>
                   <span>Responsável pela Alteração</span>
                 </h4>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 bg-gray-50 p-3.5 rounded-xl border border-gray-200">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 bg-gray-50 dark:bg-slate-900/80 p-3.5 rounded-xl border border-gray-200 dark:border-slate-800">
                   <div>
-                    <span className="text-[11px] text-gray-400 block">Nome Completo</span>
-                    <span className="font-semibold text-gray-900">{selectedLog.user}</span>
+                    <span className="text-[11px] text-gray-400 dark:text-slate-400 block">Nome Completo</span>
+                    <span className="font-semibold text-gray-900 dark:text-slate-100">{selectedLog.user}</span>
                   </div>
                   <div>
-                    <span className="text-[11px] text-gray-400 block">E-mail Corporativo</span>
-                    <span className="font-semibold text-gray-900">{selectedLog.userEmail || '—'}</span>
+                    <span className="text-[11px] text-gray-400 dark:text-slate-400 block">E-mail Corporativo</span>
+                    <span className="font-semibold text-gray-900 dark:text-slate-100">{selectedLog.userEmail || '—'}</span>
                   </div>
                   <div>
-                    <span className="text-[11px] text-gray-400 block">Perfil de Acesso</span>
-                    <span className="font-semibold text-gray-900">{selectedLog.role || 'Operacional'}</span>
+                    <span className="text-[11px] text-gray-400 dark:text-slate-400 block">Perfil de Acesso</span>
+                    <span className="font-semibold text-gray-900 dark:text-slate-100">{selectedLog.role || 'Operacional'}</span>
                   </div>
                   <div>
-                    <span className="text-[11px] text-gray-400 block">Endereço IP</span>
-                    <span className="font-mono text-gray-800">{selectedLog.ip || '189.40.112.44'}</span>
+                    <span className="text-[11px] text-gray-400 dark:text-slate-400 block">Endereço IP</span>
+                    <span className="font-mono text-gray-800 dark:text-slate-200">{selectedLog.ip || '189.40.112.44'}</span>
                   </div>
                   <div>
-                    <span className="text-[11px] text-gray-400 block">Localização Estimada</span>
-                    <span className="text-gray-800">{selectedLog.location || 'São Paulo, SP'}</span>
+                    <span className="text-[11px] text-gray-400 dark:text-slate-400 block">Localização Estimada</span>
+                    <span className="text-gray-800 dark:text-slate-200">{selectedLog.location || 'São Paulo, SP'}</span>
                   </div>
                   <div>
-                    <span className="text-[11px] text-gray-400 block">Autenticação</span>
-                    <span className="text-emerald-700 font-semibold flex items-center gap-1">
+                    <span className="text-[11px] text-gray-400 dark:text-slate-400 block">Autenticação</span>
+                    <span className="text-emerald-700 dark:text-emerald-400 font-semibold flex items-center gap-1">
                       <span className="material-symbols-outlined text-[14px]">check_circle</span>
                       2FA Verificado
                     </span>
@@ -852,18 +929,18 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({
 
               {/* Section 3: Affected Resource */}
               <div>
-                <h4 className="text-[12px] font-bold text-gray-700 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                  <span className="material-symbols-outlined text-[16px] text-emerald-600">target</span>
+                <h4 className="text-[12px] font-bold text-gray-700 dark:text-slate-300 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-[16px] text-emerald-600 dark:text-emerald-400">target</span>
                   <span>Recurso Afetado</span>
                 </h4>
-                <div className="flex items-center justify-between bg-gray-50 p-3.5 rounded-xl border border-gray-200">
+                <div className="flex items-center justify-between bg-gray-50 dark:bg-slate-900/80 p-3.5 rounded-xl border border-gray-200 dark:border-slate-800">
                   <div className="flex items-center gap-2.5">
-                    <span className="material-symbols-outlined text-[22px] text-gray-500">
+                    <span className="material-symbols-outlined text-[22px] text-gray-500 dark:text-slate-400">
                       {selectedLog.resourceType === 'contrato' ? 'description' : 'domain'}
                     </span>
                     <div>
-                      <span className="font-bold text-gray-900 block">{selectedLog.resource}</span>
-                      <span className="text-[11px] text-gray-500 capitalize">
+                      <span className="font-bold text-gray-900 dark:text-slate-100 block">{selectedLog.resource}</span>
+                      <span className="text-[11px] text-gray-500 dark:text-slate-400 capitalize">
                         Tipo: {selectedLog.resourceType || selectedLog.type}
                       </span>
                     </div>
@@ -876,7 +953,7 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({
                         onSelectContract(selectedLog.resource || '');
                         setSelectedLog(null);
                       }}
-                      className="px-3 py-1.5 rounded-lg bg-white border border-gray-200 text-[#0051d5] text-[12px] font-semibold hover:bg-blue-50 transition-colors"
+                      className="px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-[#0051d5] dark:text-blue-400 text-[12px] font-semibold hover:bg-blue-50 dark:hover:bg-slate-700 transition-colors"
                     >
                       Ir para Contrato
                     </button>
@@ -889,7 +966,7 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({
                         onSelectSupplier(selectedLog.resourceId || '');
                         setSelectedLog(null);
                       }}
-                      className="px-3 py-1.5 rounded-lg bg-white border border-gray-200 text-emerald-700 text-[12px] font-semibold hover:bg-emerald-50 transition-colors"
+                      className="px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-emerald-700 dark:text-emerald-400 text-[12px] font-semibold hover:bg-emerald-50 dark:hover:bg-slate-700 transition-colors"
                     >
                       Ver Fornecedor
                     </button>
@@ -900,27 +977,27 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({
               {/* Section 4: Detailed Diff (Before vs After) */}
               {selectedLog.changes && selectedLog.changes.length > 0 && (
                 <div>
-                  <h4 className="text-[12px] font-bold text-gray-700 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                    <span className="material-symbols-outlined text-[16px] text-amber-600">compare</span>
+                  <h4 className="text-[12px] font-bold text-gray-700 dark:text-slate-300 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-[16px] text-amber-600 dark:text-amber-400">compare</span>
                     <span>Tabela Comparativa de Alterações (Diff Antes vs Depois)</span>
                   </h4>
-                  <div className="border border-gray-200 rounded-xl overflow-hidden">
+                  <div className="border border-gray-200 dark:border-slate-800 rounded-xl overflow-hidden">
                     <table className="w-full text-left border-collapse text-[12px]">
                       <thead>
-                        <tr className="bg-gray-100/70 border-b border-gray-200 text-[11px] font-bold text-gray-500 uppercase">
+                        <tr className="bg-gray-100/70 dark:bg-slate-900 border-b border-gray-200 dark:border-slate-800 text-[11px] font-bold text-gray-500 dark:text-slate-400 uppercase">
                           <th className="py-2.5 px-3">Campo Modificado</th>
                           <th className="py-2.5 px-3">Valor Anterior (Antes)</th>
                           <th className="py-2.5 px-3">Novo Valor (Depois)</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-gray-100">
+                      <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
                         {selectedLog.changes.map((ch, idx) => (
-                          <tr key={idx} className="hover:bg-gray-50">
-                            <td className="py-2.5 px-3 font-semibold text-gray-800">{ch.label}</td>
-                            <td className="py-2.5 px-3 text-red-700 bg-red-50/50 font-mono line-through">
+                          <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-slate-800/50">
+                            <td className="py-2.5 px-3 font-semibold text-gray-800 dark:text-slate-200">{ch.label}</td>
+                            <td className="py-2.5 px-3 text-red-700 dark:text-red-400 bg-red-50/50 dark:bg-red-950/30 font-mono line-through">
                               {ch.oldValue}
                             </td>
-                            <td className="py-2.5 px-3 text-emerald-700 bg-emerald-50/50 font-semibold font-mono">
+                            <td className="py-2.5 px-3 text-emerald-700 dark:text-emerald-400 bg-emerald-50/50 dark:bg-emerald-950/30 font-semibold font-mono">
                               {ch.newValue}
                             </td>
                           </tr>
@@ -932,7 +1009,7 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({
               )}
 
               {/* Section 5: Cryptographic Proof */}
-              <div className="bg-slate-900 text-slate-200 p-4 rounded-xl text-[11px] font-mono space-y-1">
+              <div className="bg-slate-900 text-slate-200 p-4 rounded-xl text-[11px] font-mono space-y-1 border border-slate-800">
                 <div className="flex items-center justify-between text-slate-400 text-[10px] uppercase font-bold border-b border-slate-800 pb-1 mb-2">
                   <span>Assinatura Digital & Não-Repúdio</span>
                   <span className="text-emerald-400">HASH VERIFICADO</span>
@@ -944,14 +1021,13 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({
             </div>
 
             {/* Modal Footer */}
-            <div className="px-6 py-3.5 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
+            <div className="px-6 py-3.5 bg-gray-50 dark:bg-slate-900 border-t border-gray-200 dark:border-slate-800 flex items-center justify-between">
               <button
                 type="button"
                 onClick={() => {
-                  navigator.clipboard.writeText(JSON.stringify(selectedLog, null, 2));
-                  showToast('JSON do registro copiado para a área de transferência!');
+                  safeCopyToClipboard(JSON.stringify(selectedLog, null, 2), 'JSON do registro copiado para a área de transferência!');
                 }}
-                className="h-9 px-3 rounded-xl bg-white border border-gray-200 text-gray-700 text-[12px] font-semibold hover:bg-gray-100 transition-colors flex items-center gap-1.5"
+                className="h-9 px-3 rounded-xl bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-700 dark:text-slate-200 text-[12px] font-semibold hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors flex items-center gap-1.5"
               >
                 <span className="material-symbols-outlined text-[16px]">content_copy</span>
                 <span>Copiar Registro Forense</span>
@@ -960,7 +1036,7 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({
               <button
                 type="button"
                 onClick={() => setSelectedLog(null)}
-                className="h-9 px-4 rounded-xl bg-[#0051d5] text-white text-[12px] font-semibold hover:bg-[#003ea8] transition-colors"
+                className="h-9 px-4 rounded-xl bg-[#0051d5] text-white text-[12px] font-semibold hover:bg-[#0041ab] transition-colors"
               >
                 Fechar
               </button>

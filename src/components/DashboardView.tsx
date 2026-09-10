@@ -12,6 +12,7 @@ import {
   CartesianGrid,
 } from 'recharts';
 import { Contract, Supplier, AuditLog, UserProfile, UserRole } from '../types';
+import { calculateDaysRemaining } from '../utils/contractMonitor';
 
 interface DashboardViewProps {
   currentRole?: UserRole;
@@ -81,25 +82,29 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const activeContracts = useMemo(() => contracts.filter((c) => c.status === 'vigente'), [contracts]);
   const expiringContracts = useMemo(
     () =>
-      contracts.filter(
-        (c) =>
-          c.status === 'avencer' ||
-          (c.remainingDays !== undefined && c.remainingDays <= 60 && c.remainingDays >= 0)
-      ),
+      contracts.filter((c) => {
+        if (c.status === 'expirado') return false;
+        const days = calculateDaysRemaining(c);
+        return c.status === 'avencer' || (days <= 60 && days > 0);
+      }),
     [contracts]
   );
   const expiring30Contracts = useMemo(
     () =>
-      contracts.filter(
-        (c) => c.remainingDays !== undefined && c.remainingDays <= 30 && c.remainingDays >= 0
-      ),
+      contracts.filter((c) => {
+        if (c.status === 'expirado') return false;
+        const days = calculateDaysRemaining(c);
+        return days <= 30 && days > 0;
+      }),
     [contracts]
   );
   const expiring60Contracts = useMemo(
     () =>
-      contracts.filter(
-        (c) => c.remainingDays !== undefined && c.remainingDays > 30 && c.remainingDays <= 60
-      ),
+      contracts.filter((c) => {
+        if (c.status === 'expirado') return false;
+        const days = calculateDaysRemaining(c);
+        return days > 30 && days <= 60;
+      }),
     [contracts]
   );
   const unsignedContracts = useMemo(
@@ -238,9 +243,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   // Expiration contracts list
   const expirationContractsList = useMemo(() => {
     return contracts
-      .filter((c) => c.remainingDays !== undefined || c.status === 'avencer')
+      .filter((c) => {
+        if (c.status === 'expirado') return false;
+        const days = calculateDaysRemaining(c);
+        return c.status === 'avencer' || (days <= 90 && days > 0);
+      })
       .map((c) => {
-        const days = c.remainingDays !== undefined ? c.remainingDays : 30;
+        const days = calculateDaysRemaining(c);
         let criticality: 'critico' | 'atencao' | 'normal' = 'normal';
         if (days <= 30) criticality = 'critico';
         else if (days <= 60) criticality = 'atencao';
@@ -533,7 +542,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   </div>
                 </div>
                 <div className="flex items-center justify-between mt-4 pt-2 border-t border-gray-50">
-                  <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#ecfdf5] text-[#059669] text-[12px] font-semibold">
+                  <div className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#ecfdf5] text-[#059669] text-[12px] font-semibold">
                     <span className="material-symbols-outlined text-[14px]">trending_up</span>
                     <span>
                       {totalContractsCount === 0 ? '0% este mês' : `${activeContracts.length} ativos`}
@@ -814,7 +823,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   {unsignedContracts.length === 0 ? (
                     <div className="py-8 text-center flex flex-col items-center justify-center">
                       <div className="w-10 h-10 rounded-xl bg-[#ecfdf5] text-[#059669] flex items-center justify-center mb-2">
-                        <span className="material-symbols-outlined text-[20px]">check_circle</span>
+                        <span className="material-symbols-outlined text-[22px]">check_circle</span>
                       </div>
                       <p className="text-[13px] font-bold text-[#0b1c30]">
                         Nenhuma pendência operacional
@@ -1152,6 +1161,30 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   <div className="h-[260px] w-full relative flex items-center justify-center my-2">
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
+                        <RechartsTooltip
+                          content={({ active, payload }) => {
+                            if (active && payload && payload.length) {
+                              const data = payload[0].payload;
+                              return (
+                                <div className="bg-[#0b1c30] text-white p-2.5 rounded-xl shadow-xl text-xs border border-white/10 z-50 min-w-[170px]">
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: data.color }} />
+                                    <span className="font-bold">{data.name}</span>
+                                  </div>
+                                  <div className="text-gray-300 text-[11px]">
+                                    {data.value} {data.value === 1 ? 'contrato' : 'contratos'} ({data.percentage}%)
+                                  </div>
+                                  {data.financialVolume !== undefined && (
+                                    <div className="text-[#60a5fa] font-semibold text-[11px] mt-0.5">
+                                      {formatBRL(data.financialVolume)}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            }
+                            return null;
+                          }}
+                        />
                         <Pie
                           data={filteredStatusData}
                           dataKey="value"
@@ -1215,29 +1248,66 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         Valores consolidados em carteira
                       </span>
                     </div>
-                    <div className="flex items-center gap-1 bg-[#eff4ff] p-0.5 rounded-lg">
-                      <button
-                        type="button"
-                        onClick={() => setCategoryMetric('valor')}
-                        className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all ${
-                          categoryMetric === 'valor'
-                            ? 'bg-white text-[#0051d5] shadow-xs'
-                            : 'text-[#45464d] hover:text-[#0b1c30]'
-                        }`}
-                      >
-                        Valor (R$)
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setCategoryMetric('quantidade')}
-                        className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all ${
-                          categoryMetric === 'quantidade'
-                            ? 'bg-white text-[#0051d5] shadow-xs'
-                            : 'text-[#45464d] hover:text-[#0b1c30]'
-                        }`}
-                      >
-                        Qtd
-                      </button>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {/* Metric Toggle */}
+                      <div className="flex items-center gap-1 bg-[#eff4ff] p-0.5 rounded-lg border border-[#dce9ff]">
+                        <button
+                          type="button"
+                          id="btn-metric-valor"
+                          onClick={() => setCategoryMetric('valor')}
+                          className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all ${
+                            categoryMetric === 'valor'
+                              ? 'bg-white text-[#0051d5] shadow-xs'
+                              : 'text-[#45464d] hover:text-[#0b1c30]'
+                          }`}
+                        >
+                          Valor (R$)
+                        </button>
+                        <button
+                          type="button"
+                          id="btn-metric-qtd"
+                          onClick={() => setCategoryMetric('quantidade')}
+                          className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all ${
+                            categoryMetric === 'quantidade'
+                              ? 'bg-white text-[#0051d5] shadow-xs'
+                              : 'text-[#45464d] hover:text-[#0b1c30]'
+                          }`}
+                        >
+                          Qtd
+                        </button>
+                      </div>
+
+                      {/* Sorting Toggle: Valor vs Nome */}
+                      <div className="flex items-center gap-1 bg-[#f8fafc] p-0.5 rounded-lg border border-gray-200">
+                        <button
+                          type="button"
+                          id="btn-sort-category-valor"
+                          title="Ordenar por volume ou quantidade"
+                          onClick={() => setCategorySort('valor')}
+                          className={`px-2 py-1 rounded-md text-[11px] font-semibold transition-all flex items-center gap-1 ${
+                            categorySort === 'valor'
+                              ? 'bg-white text-[#0b1c30] shadow-xs border border-gray-200/80 font-bold'
+                              : 'text-[#64748b] hover:text-[#0b1c30]'
+                          }`}
+                        >
+                          <span className="material-symbols-outlined text-[13px]">sort</span>
+                          <span>{categoryMetric === 'valor' ? 'Valor' : 'Qtd'}</span>
+                        </button>
+                        <button
+                          type="button"
+                          id="btn-sort-category-nome"
+                          title="Ordenar por nome da categoria (A-Z)"
+                          onClick={() => setCategorySort('nome')}
+                          className={`px-2 py-1 rounded-md text-[11px] font-semibold transition-all flex items-center gap-1 ${
+                            categorySort === 'nome'
+                              ? 'bg-white text-[#0b1c30] shadow-xs border border-gray-200/80 font-bold'
+                              : 'text-[#64748b] hover:text-[#0b1c30]'
+                          }`}
+                        >
+                          <span className="material-symbols-outlined text-[13px]">sort_by_alpha</span>
+                          <span>Nome</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
 
@@ -1263,6 +1333,34 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                           axisLine={{ stroke: '#e5eeff' }}
                           tickLine={false}
                           width={80}
+                        />
+                        <RechartsTooltip
+                          content={({ active, payload }) => {
+                            if (active && payload && payload.length) {
+                              const item = payload[0].payload;
+                              return (
+                                <div className="bg-[#0b1c30] text-white p-2.5 rounded-xl shadow-xl text-xs border border-white/10 z-50 min-w-[180px]">
+                                  <div className="flex items-center gap-2 mb-1.5">
+                                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
+                                    <span className="font-bold text-[13px]">{item.category}</span>
+                                  </div>
+                                  <div className="text-gray-300 text-[11px] flex justify-between gap-2">
+                                    <span>Volume Total:</span>
+                                    <span className="text-white font-semibold">{formatBRL(item.totalValue)}</span>
+                                  </div>
+                                  <div className="text-gray-300 text-[11px] flex justify-between gap-2">
+                                    <span>Contratos:</span>
+                                    <span className="text-white font-semibold">{item.contractCount}</span>
+                                  </div>
+                                  <div className="text-gray-300 text-[11px] flex justify-between gap-2 pt-1 border-t border-white/10 mt-1">
+                                    <span>Ticket Médio:</span>
+                                    <span className="text-[#60a5fa] font-semibold">{formatBRL(item.averageTicket)}</span>
+                                  </div>
+                                </div>
+                              );
+                            }
+                            return null;
+                          }}
                         />
                         <Bar
                           dataKey={categoryMetric === 'valor' ? 'valueMillions' : 'contractCount'}
@@ -1326,15 +1424,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
               <div className="p-3.5 bg-white rounded-xl border border-[#e5eeff] shadow-xs flex items-center justify-between">
                 <div>
-                  <span className="text-[11px] font-semibold text-[#45464d] uppercase tracking-wider">
+                  <span className="text-[11px] font-semibold text-amber-700 uppercase tracking-wider">
                     No Radar
                   </span>
-                  <div className="text-[20px] font-bold text-[#b45309] mt-0.5">
+                  <div className="text-[20px] font-bold text-amber-800 mt-0.5">
                     {expiringContracts.length} Contratos
                   </div>
                   <span className="text-[10px] text-[#45464d] font-medium">Próximos 60 dias</span>
                 </div>
-                <div className="w-9 h-9 rounded-lg bg-[#fffbeb] text-[#d97706] flex items-center justify-center">
+                <div className="w-9 h-9 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center border border-amber-200/50">
                   <span className="material-symbols-outlined text-[20px]">
                     notification_important
                   </span>
@@ -1343,30 +1441,30 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
               <div className="p-3.5 bg-white rounded-xl border border-[#e5eeff] shadow-xs flex items-center justify-between">
                 <div>
-                  <span className="text-[11px] font-semibold text-[#ba1a1a] uppercase tracking-wider">
+                  <span className="text-[11px] font-semibold text-red-600 uppercase tracking-wider">
                     Críticos (&lt;30 dias)
                   </span>
-                  <div className="text-[20px] font-bold text-[#ba1a1a] mt-0.5">
+                  <div className="text-[20px] font-bold text-red-700 mt-0.5">
                     {expiring30Contracts.length} Unidades
                   </div>
-                  <span className="text-[10px] text-[#ba1a1a] font-medium">Ação prioritária</span>
+                  <span className="text-[10px] text-red-600 font-medium">Ação prioritária</span>
                 </div>
-                <div className="w-9 h-9 rounded-lg bg-[#ffdad6]/50 text-[#ba1a1a] flex items-center justify-center">
+                <div className="w-9 h-9 rounded-lg bg-red-50 text-red-600 flex items-center justify-center border border-red-200/50">
                   <span className="material-symbols-outlined text-[20px]">warning</span>
                 </div>
               </div>
 
               <div className="p-3.5 bg-white rounded-xl border border-[#e5eeff] shadow-xs flex items-center justify-between">
                 <div>
-                  <span className="text-[11px] font-semibold text-[#d97706] uppercase tracking-wider">
+                  <span className="text-[11px] font-semibold text-amber-600 uppercase tracking-wider">
                     Atenção (30-60d)
                   </span>
-                  <div className="text-[20px] font-bold text-[#d97706] mt-0.5">
+                  <div className="text-[20px] font-bold text-amber-700 mt-0.5">
                     {expiring60Contracts.length} Unidades
                   </div>
                   <span className="text-[10px] text-[#45464d] font-medium">Em planejamento</span>
                 </div>
-                <div className="w-9 h-9 rounded-lg bg-[#fffbeb] text-[#d97706] flex items-center justify-center">
+                <div className="w-9 h-9 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center border border-amber-200/50">
                   <span className="material-symbols-outlined text-[20px]">schedule</span>
                 </div>
               </div>
@@ -1379,7 +1477,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   <div className="text-[20px] font-bold text-[#0051d5] mt-0.5">60 • 30 • 15d</div>
                   <span className="text-[10px] text-[#059669] font-medium">Disparos ativos</span>
                 </div>
-                <div className="w-9 h-9 rounded-lg bg-[#eff4ff] text-[#0051d5] flex items-center justify-center">
+                <div className="w-9 h-9 rounded-lg bg-blue-50 text-[#0051d5] flex items-center justify-center border border-blue-200/50">
                   <span className="material-symbols-outlined text-[20px]">mark_email_read</span>
                 </div>
               </div>
@@ -1402,10 +1500,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   <button
                     type="button"
                     onClick={() => setExpirationHorizonFilter('todos')}
-                    className={`px-3 py-1 rounded-lg text-[12px] font-semibold transition-colors ${
+                    className={`px-3 py-1 rounded-lg text-[12px] font-semibold transition-colors border ${
                       expirationHorizonFilter === 'todos'
-                        ? 'bg-[#0051d5] text-white shadow-xs'
-                        : 'bg-[#eff4ff] text-[#45464d] hover:text-[#0b1c30]'
+                        ? 'bg-[#0051d5] text-white border-transparent shadow-xs'
+                        : 'bg-[#eff4ff] text-[#45464d] hover:text-[#0b1c30] hover:bg-[#dce9ff] border-transparent'
                     }`}
                   >
                     Todos ({expirationContractsList.length})
@@ -1413,10 +1511,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   <button
                     type="button"
                     onClick={() => setExpirationHorizonFilter('criticos')}
-                    className={`px-3 py-1 rounded-lg text-[12px] font-semibold transition-colors ${
+                    className={`px-3 py-1 rounded-lg text-[12px] font-semibold transition-colors border ${
                       expirationHorizonFilter === 'criticos'
-                        ? 'bg-[#ba1a1a] text-white shadow-xs'
-                        : 'bg-[#ffdad6]/60 text-[#ba1a1a] hover:bg-[#ffdad6]'
+                        ? 'bg-[#ba1a1a] text-white border-transparent shadow-xs'
+                        : 'bg-red-50 text-red-700 hover:bg-red-100 border-red-200/80'
                     }`}
                   >
                     Críticos (&lt; 30 dias)
@@ -1424,10 +1522,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   <button
                     type="button"
                     onClick={() => setExpirationHorizonFilter('atencao')}
-                    className={`px-3 py-1 rounded-lg text-[12px] font-semibold transition-colors ${
+                    className={`px-3 py-1 rounded-lg text-[12px] font-semibold transition-colors border ${
                       expirationHorizonFilter === 'atencao'
-                        ? 'bg-[#d97706] text-white shadow-xs'
-                        : 'bg-[#fffbeb] text-[#b45309] hover:bg-amber-100'
+                        ? 'bg-[#d97706] text-white border-transparent shadow-xs'
+                        : 'bg-amber-50 text-amber-800 hover:bg-amber-100 border-amber-200/80'
                     }`}
                   >
                     Atenção (30 a 60 dias)
@@ -1438,7 +1536,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               {/* Expiration Cards List dynamically mapped */}
               {filteredExpirationContracts.length === 0 ? (
                 <div className="py-12 text-center flex flex-col items-center justify-center">
-                  <div className="w-12 h-12 rounded-2xl bg-[#fffbeb] text-[#d97706] flex items-center justify-center mb-3">
+                  <div className="w-12 h-12 rounded-2xl bg-[#fffbeb] text-[#d97706] flex items-center justify-center mb-3 border border-amber-200">
                     <span className="material-symbols-outlined text-[26px]">event_available</span>
                   </div>
                   <h4 className="text-[15px] font-bold text-[#0b1c30]">
@@ -1461,9 +1559,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         <div
                           className={`w-11 h-11 rounded-xl flex flex-col items-center justify-center shrink-0 border ${
                             item.criticality === 'critico'
-                              ? 'bg-[#fffbeb] text-[#d97706] border-amber-200/60'
+                              ? 'bg-red-50 text-red-700 border-red-200/80'
                               : item.criticality === 'atencao'
-                              ? 'bg-[#eff4ff] text-[#45464d] border-gray-200'
+                              ? 'bg-amber-50 text-amber-800 border-amber-200/80'
                               : 'bg-gray-50 text-gray-500 border-gray-200'
                           }`}
                         >
@@ -1479,7 +1577,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                             <span className="text-[13px] text-[#0b1c30] font-bold truncate">
                               {item.company}
                             </span>
-                            <span className="px-1.5 py-0.2 rounded bg-[#e5eeff] text-[#0b1c30] text-[10px] font-medium">
+                            <span className="px-1.5 py-0.2 rounded bg-[#e5eeff] text-[#0b1c30] text-[10px] font-medium border border-transparent">
                               {item.id}
                             </span>
                           </div>
@@ -1497,7 +1595,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         <button
                           type="button"
                           onClick={() => handleContractClick(item.id)}
-                          className="px-3 py-1.5 rounded-lg bg-white border border-gray-200 text-[#0b1c30] text-[12px] font-semibold hover:bg-gray-50 shadow-xs"
+                          className="px-3 py-1.5 rounded-lg bg-white border border-gray-200 text-[#0b1c30] text-[12px] font-semibold hover:bg-gray-50 shadow-xs transition-colors"
                         >
                           Ver Instrumento
                         </button>
@@ -1623,7 +1721,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         Protocolo Criptográfico
                       </span>
                     </div>
-                    <span className="px-2 py-0.5 rounded-full bg-[#ecfdf5] text-[#059669] text-[12px] font-bold border border-emerald-200">
+                    <span className="px-2.5 py-0.5 rounded-full bg-[#ecfdf5] text-[#059669] text-[12px] font-bold">
                       Ativo
                     </span>
                   </div>

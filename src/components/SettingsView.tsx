@@ -28,6 +28,8 @@ interface SettingsViewProps {
   currentRole?: UserRole;
   onRoleChange?: (role: UserRole) => void;
   onNavigateDashboard?: () => void;
+  auditLogs?: AuditLog[];
+  onAddAuditLog?: (log: Partial<AuditLog>) => void;
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
@@ -38,6 +40,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   currentRole = 'administrador',
   onRoleChange,
   onNavigateDashboard,
+  auditLogs: auditLogsProp,
+  onAddAuditLog,
 }) => {
   const [activeTab, setActiveTab] = useState<'geral' | 'notificacoes' | 'perfis' | 'integracoes' | 'seguranca'>(
     currentRole === 'administrador' ? 'perfis' : 'geral'
@@ -91,52 +95,40 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [syncingIntegrationId, setSyncingIntegrationId] = useState<string | null>(null);
 
   // States for Security & Audit
-  const [auditLogs, setAuditLogs] = useState<AuditLog[]>(initialAuditLogs);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>(auditLogsProp || initialAuditLogs);
   const [auditSearchTerm, setAuditSearchTerm] = useState('');
   const [auditFilterType, setAuditFilterType] = useState<string>('todos');
+
+  // Sincroniza logs corporativos quando o estado global do App for atualizado
+  useEffect(() => {
+    if (auditLogsProp) {
+      setAuditLogs(auditLogsProp);
+    }
+  }, [auditLogsProp]);
+
+  // Registra o evento de auditoria tanto no estado visual local quanto na governança global imutável
+  const logAuditEvent = (newAuditLog: AuditLog) => {
+    setAuditLogs((logs) => [newAuditLog, ...logs]);
+    if (onAddAuditLog) {
+      onAddAuditLog(newAuditLog);
+    }
+  };
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3500);
   };
 
-  const handleToggle = (key: keyof Pick<SystemSettings, 'notice30Days' | 'notice60Days' | 'signaturePending7Days' | 'aiRiskInstantAlert' | 'twoFactorRequired' | 'ssoEnabled' | 'ipWhitelistEnabled' | 'darkMode'>) => {
+  const handleToggle = (key: keyof Pick<SystemSettings, 'notice30Days' | 'notice60Days' | 'signaturePending7Days' | 'aiRiskInstantAlert' | 'twoFactorRequired' | 'ssoEnabled' | 'ipWhitelistEnabled'>) => {
     setFormData((prev) => ({
       ...prev,
       [key]: !prev[key],
     }));
   };
 
-  const handleToggleDarkMode = () => {
-    const nextVal = !formData.darkMode;
-    const updated = {
-      ...formData,
-      darkMode: nextVal,
-    };
-    setFormData(updated);
-    onUpdateSettings(updated);
-    showToast(nextVal ? 'Modo Escuro ativado! Conforto visual otimizado para baixa luminosidade.' : 'Modo Claro ativado.');
-  };
-
-  const handleSetDarkMode = (enabled: boolean) => {
-    if (formData.darkMode === enabled) return;
-    const updated = {
-      ...formData,
-      darkMode: enabled,
-    };
-    setFormData(updated);
-    onUpdateSettings(updated);
-    showToast(enabled ? 'Modo Escuro ativado! Conforto visual otimizado para baixa luminosidade.' : 'Modo Claro ativado.');
-  };
-
   React.useEffect(() => {
-    if (settings.darkMode !== undefined) {
-      setFormData((prev) => ({
-        ...prev,
-        darkMode: settings.darkMode,
-      }));
-    }
-  }, [settings.darkMode]);
+    setFormData(settings);
+  }, [settings]);
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
@@ -173,7 +165,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             type: 'permission',
             severity: nextLevel === 'bloqueado' ? 'medio' : 'baixo',
           };
-          setAuditLogs((logs) => [newAuditLog, ...logs]);
+          logAuditEvent(newAuditLog);
 
           showToast(`Permissão "${perm.name}" para ${roleNameLabel}: ${nextLevel.toUpperCase()}`);
           return {
@@ -208,7 +200,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       type: 'security',
       severity: 'medio',
     };
-    setAuditLogs((logs) => [newAuditLog, ...logs]);
+    logAuditEvent(newAuditLog);
     showToast('Matriz de acessos granulares salva com sucesso na governança corporativa!');
   };
 
@@ -228,42 +220,51 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       type: 'warning',
       severity: 'alto',
     };
-    setAuditLogs((logs) => [newAuditLog, ...logs]);
+    logAuditEvent(newAuditLog);
     showToast('Permissões restauradas para o baseline padrão corporativo.');
+  };
+
+  const safeCopy = (text: string, label: string) => {
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      navigator.clipboard.writeText(text).then(() => {
+        showToast(label);
+      }).catch(() => {
+        try {
+          const textArea = document.createElement('textarea');
+          textArea.value = text;
+          textArea.style.position = 'fixed';
+          textArea.style.opacity = '0';
+          document.body.appendChild(textArea);
+          textArea.focus();
+          textArea.select();
+          document.execCommand('copy');
+          document.body.removeChild(textArea);
+          showToast(label);
+        } catch {
+          showToast('Não foi possível copiar automaticamente para a área de transferência.');
+        }
+      });
+    } else {
+      try {
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        textArea.style.position = 'fixed';
+        textArea.style.opacity = '0';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+        showToast(label);
+      } catch {
+        showToast('Não foi possível copiar automaticamente para a área de transferência.');
+      }
+    }
   };
 
   const handleCopyMatrixJson = () => {
     const jsonStr = JSON.stringify(granularPermissions, null, 2);
-    navigator.clipboard.writeText(jsonStr);
-    showToast('Matriz de permissões copiada em formato JSON para a área de transferência!');
-  };
-
-  // Helper for RBAC legacy matrix permission toggles
-  const handleToggleRbac = (moduleIndex: number, role: 'admin' | 'editor' | 'visualizador') => {
-    setFormData((prev) => {
-      const newMatrix = [...prev.rbacMatrix];
-      const current = { ...newMatrix[moduleIndex] };
-
-      if (role === 'visualizador') {
-        // Cycle: true -> 'leitura' -> false -> true
-        if (current.visualizador === true) {
-          current.visualizador = 'leitura';
-        } else if (current.visualizador === 'leitura') {
-          current.visualizador = false;
-        } else {
-          current.visualizador = true;
-        }
-      } else {
-        current[role] = !current[role];
-      }
-
-      newMatrix[moduleIndex] = current;
-      return {
-        ...prev,
-        rbacMatrix: newMatrix,
-      };
-    });
-    showToast('Permissão da matriz RBAC atualizada!');
+    safeCopy(jsonStr, 'Matriz de permissões copiada em formato JSON para a área de transferência!');
   };
 
   // User Actions
@@ -302,7 +303,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       type: 'security',
       severity: 'medio',
     };
-    setAuditLogs((logs) => [newAuditLog, ...logs]);
+    logAuditEvent(newAuditLog);
     showToast(`Usuário ${newUser.name} convidado com perfil ${newUser.role.toUpperCase()}!`);
   };
 
@@ -339,7 +340,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             type: 'security',
             severity: newRole === 'administrador' ? 'alto' : 'baixo',
           };
-          setAuditLogs((logs) => [newAuditLog, ...logs]);
+          logAuditEvent(newAuditLog);
           return updatedUser;
         }
         return u;
@@ -385,8 +386,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   };
 
   const copyToClipboard = (text: string, label: string) => {
-    navigator.clipboard.writeText(text);
-    showToast(`${label} copiado para a área de transferência!`);
+    safeCopy(text, `${label} copiado para a área de transferência!`);
   };
 
   // Webhook Actions
@@ -510,28 +510,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Quick Dark Mode Toggle in Header */}
-            <button
-              type="button"
-              id="settings-quick-dark-mode-toggle"
-              onClick={handleToggleDarkMode}
-              className={`h-9 px-3 rounded-xl border text-[13px] font-semibold transition-all flex items-center gap-2 ${
-                formData.darkMode
-                  ? 'bg-[#1e293b] border-blue-500/40 text-blue-400 hover:bg-[#27354f]'
-                  : 'bg-white border-[#e5eeff] text-[#45464d] hover:text-[#0b1c30] hover:bg-[#eff4ff]'
-              }`}
-              title={formData.darkMode ? 'Alternar para Modo Claro' : 'Alternar para Modo Escuro (Baixa Luminosidade)'}
-            >
-              <span className="material-symbols-outlined text-[18px]">
-                {formData.darkMode ? 'dark_mode' : 'light_mode'}
-              </span>
-              <span className="hidden sm:inline">{formData.darkMode ? 'Modo Escuro' : 'Modo Claro'}</span>
-              <span
-                className={`w-2 h-2 rounded-full ${
-                  formData.darkMode ? 'bg-blue-400 animate-pulse' : 'bg-amber-400'
-                }`}
-              />
-            </button>
             <button
               type="button"
               onClick={() => {
@@ -633,172 +611,48 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         {activeTab === 'geral' && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-in fade-in duration-200">
             <div className="lg:col-span-8 flex flex-col gap-5">
-              {/* Theme & Visual Comfort Card (Dark Mode) */}
+              {/* Theme & Visual Standards Card (Light Theme Standard) */}
               <div
-                id="card-dark-mode-settings"
+                id="card-visual-settings"
                 className="p-5 bg-white rounded-2xl border border-[#e5eeff] shadow-[0_1px_3px_rgba(0,0,0,0.04)] flex flex-col gap-4"
               >
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
-                    <div
-                      className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${
-                        formData.darkMode
-                          ? 'bg-blue-500/20 text-blue-400'
-                          : 'bg-[#0051d5]/10 text-[#0051d5]'
-                      }`}
-                    >
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-[#0051d5]/10 text-[#0051d5]">
                       <span className="material-symbols-outlined text-[24px]">
-                        {formData.darkMode ? 'dark_mode' : 'contrast'}
+                        light_mode
                       </span>
                     </div>
                     <div>
                       <div className="flex items-center gap-2">
                         <h2 className="text-[16px] font-bold text-[#0b1c30]">
-                          Aparência & Conforto Visual (Modo Escuro)
+                          Aparência & Identidade Visual
                         </h2>
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wide uppercase border ${
-                            formData.darkMode
-                              ? 'bg-blue-950/60 text-blue-400 border-blue-800'
-                              : 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                          }`}
-                        >
-                          {formData.darkMode ? 'Escuro Ativo' : 'Claro Ativo'}
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wide uppercase border bg-emerald-50 text-emerald-700 border-emerald-200">
+                          Tema Claro Corporativo
                         </span>
                       </div>
                       <span className="text-[12px] text-[#45464d]">
-                        Otimize o contraste da interface para ambientes com pouca luz e reduza o cansaço visual ao analisar minutas contratuais.
+                        Padrão visual corporativo unificado com alto contraste e legibilidade para análise de minutas e relatórios.
                       </span>
                     </div>
                   </div>
-
-                  {/* Main Toggle Switch */}
-                  <div className="flex items-center gap-3 self-end sm:self-center">
-                    <span className="text-[12px] font-semibold text-[#45464d]">
-                      {formData.darkMode ? 'Modo Escuro Ativado' : 'Modo Claro'}
-                    </span>
-                    <button
-                      type="button"
-                      id="toggle-dark-mode-switch"
-                      role="switch"
-                      aria-checked={!!formData.darkMode}
-                      onClick={handleToggleDarkMode}
-                      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-[#0051d5] focus:ring-offset-2 ${
-                        formData.darkMode ? 'bg-[#0051d5]' : 'bg-gray-200'
-                      }`}
-                    >
-                      <span className="sr-only">Alternar Modo Escuro</span>
-                      <span
-                        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out flex items-center justify-center ${
-                          formData.darkMode ? 'translate-x-5' : 'translate-x-0'
-                        }`}
-                      >
-                        <span className="material-symbols-outlined text-[13px] text-gray-700">
-                          {formData.darkMode ? 'dark_mode' : 'light_mode'}
-                        </span>
-                      </span>
-                    </button>
-                  </div>
                 </div>
 
-                {/* Theme Selector Cards */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-2 border-t border-gray-100">
-                  {/* Option: Modo Claro */}
-                  <div
-                    id="option-light-mode"
-                    onClick={() => handleSetDarkMode(false)}
-                    className={`cursor-pointer p-4 rounded-xl border-2 transition-all flex flex-col gap-2.5 ${
-                      !formData.darkMode
-                        ? 'border-[#0051d5] bg-blue-50/40 ring-2 ring-[#0051d5]/10 shadow-sm'
-                        : 'border-gray-200 hover:border-gray-300 bg-white'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="material-symbols-outlined text-[20px] text-amber-500">
-                          light_mode
-                        </span>
-                        <span className="text-[13px] font-bold text-[#0b1c30]">
-                          Modo Claro (Padrão Corporativo)
-                        </span>
-                      </div>
-                      {!formData.darkMode && (
-                        <span className="w-5 h-5 rounded-full bg-[#0051d5] text-white flex items-center justify-center text-[12px]">
-                          <span className="material-symbols-outlined text-[14px]">check</span>
-                        </span>
-                      )}
+                <div className="p-4 rounded-xl border border-[#e5eeff] bg-[#f8f9ff] flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className="material-symbols-outlined text-[20px] text-[#0051d5]">check_circle</span>
+                    <div>
+                      <p className="text-[13px] font-bold text-[#0b1c30]">
+                        Tema Claro Corporativo Padronizado
+                      </p>
+                      <p className="text-[11px] text-[#45464d]">
+                        Configuração de contraste calibrada para visualização precisa de contratos, termos e auditorias.
+                      </p>
                     </div>
-                    {/* Mock Mini Canvas Preview */}
-                    <div className="h-16 rounded-lg bg-[#f8f9ff] border border-gray-200 p-2 flex flex-col gap-1.5 pointer-events-none overflow-hidden">
-                      <div className="h-2 w-16 bg-blue-600/70 rounded"></div>
-                      <div className="flex gap-1.5">
-                        <div className="w-8 h-8 rounded bg-gray-200 shrink-0"></div>
-                        <div className="flex-1 flex flex-col gap-1">
-                          <div className="h-2 w-full bg-gray-200 rounded"></div>
-                          <div className="h-2 w-3/4 bg-gray-100 rounded"></div>
-                        </div>
-                      </div>
-                    </div>
-                    <p className="text-[11px] text-[#45464d] leading-relaxed">
-                      Luminosidade equilibrada de alto contraste, ideal para escritórios bem iluminados e uso comercial diurno.
-                    </p>
                   </div>
-
-                  {/* Option: Modo Escuro */}
-                  <div
-                    id="option-dark-mode"
-                    onClick={() => handleSetDarkMode(true)}
-                    className={`cursor-pointer p-4 rounded-xl border-2 transition-all flex flex-col gap-2.5 ${
-                      formData.darkMode
-                        ? 'border-blue-500 bg-[#16223b] ring-2 ring-blue-500/20 shadow-sm'
-                        : 'border-gray-200 hover:border-gray-300 bg-white'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="material-symbols-outlined text-[20px] text-blue-400">
-                          dark_mode
-                        </span>
-                        <span className="text-[13px] font-bold text-[#0b1c30]">
-                          Modo Escuro (Baixa Luminosidade)
-                        </span>
-                      </div>
-                      {formData.darkMode && (
-                        <span className="w-5 h-5 rounded-full bg-blue-500 text-white flex items-center justify-center text-[12px]">
-                          <span className="material-symbols-outlined text-[14px]">check</span>
-                        </span>
-                      )}
-                    </div>
-                    {/* Mock Mini Canvas Preview */}
-                    <div className="h-16 rounded-lg bg-[#0b1120] border border-[#1e293b] p-2 flex flex-col gap-1.5 pointer-events-none overflow-hidden">
-                      <div className="h-2 w-16 bg-blue-400 rounded"></div>
-                      <div className="flex gap-1.5">
-                        <div className="w-8 h-8 rounded bg-[#1e293b] shrink-0"></div>
-                        <div className="flex-1 flex flex-col gap-1">
-                          <div className="h-2 w-full bg-[#1e293b] rounded"></div>
-                          <div className="h-2 w-3/4 bg-[#162033] rounded"></div>
-                        </div>
-                      </div>
-                    </div>
-                    <p className="text-[11px] text-[#45464d] leading-relaxed">
-                      Paleta escura balanceada com redução de emissão azul, ideal para períodos noturnos ou ambientes com pouca luz.
-                    </p>
-                  </div>
-                </div>
-
-                {/* Features & Ergonomics Footer */}
-                <div className="pt-2 border-t border-gray-100 flex flex-wrap items-center gap-4 text-[11px] text-[#45464d]">
-                  <span className="flex items-center gap-1">
-                    <span className="material-symbols-outlined text-[15px] text-emerald-600">check_circle</span>
-                    Persistência automática no navegador
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <span className="material-symbols-outlined text-[15px] text-emerald-600">check_circle</span>
-                    Conforto na leitura prolongada de cláusulas
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <span className="material-symbols-outlined text-[15px] text-emerald-600">check_circle</span>
-                    Otimizado para telas OLED e alta resolução
+                  <span className="px-2.5 py-1 rounded-lg bg-white border border-[#dce9ff] text-[12px] font-semibold text-[#0051d5]">
+                    Ativo
                   </span>
                 </div>
               </div>

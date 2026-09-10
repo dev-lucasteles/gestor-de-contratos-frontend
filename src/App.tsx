@@ -38,34 +38,20 @@ export default function App() {
   const [userProfile, setUserProfile] = useState<UserProfile>(initialUserProfile);
   const [contracts, setContracts] = useState<Contract[]>(initialContracts);
   const [suppliers, setSuppliers] = useState<Supplier[]>(initialSuppliers);
-  const [settings, setSettings] = useState<SystemSettings>(() => {
-    const savedDark = typeof window !== 'undefined' 
-      ? (localStorage.getItem('maiscontratos_dark_mode') || localStorage.getItem('contractflow_dark_mode'))
-      : null;
-    return {
-      ...initialSettings,
-      darkMode: savedDark !== null ? savedDark === 'true' : (initialSettings.darkMode ?? false),
-    };
-  });
+  const [settings, setSettings] = useState<SystemSettings>(initialSettings);
   const [notifications, setNotifications] = useState<NotificationItem[]>(initialNotifications);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>(initialAuditLogs);
   const [selectedContract, setSelectedContract] = useState<Contract | null>(null);
   const [auditFilterResource, setAuditFilterResource] = useState<string>('');
 
-  // Dark mode synchronization with HTML class and localStorage
+  // Enforce Light Mode strictly across the application
   useEffect(() => {
-    if (settings.darkMode) {
-      document.documentElement.classList.add('dark');
-      try {
-        localStorage.setItem('maiscontratos_dark_mode', 'true');
-      } catch (e) {}
-    } else {
-      document.documentElement.classList.remove('dark');
-      try {
-        localStorage.setItem('maiscontratos_dark_mode', 'false');
-      } catch (e) {}
-    }
-  }, [settings.darkMode]);
+    document.documentElement.classList.remove('dark');
+    try {
+      localStorage.removeItem('maiscontratos_dark_mode');
+      localStorage.removeItem('contractflow_dark_mode');
+    } catch (e) {}
+  }, []);
 
   // RBAC Access Guard: Automatically redirect if current role does not have access to the tab
   useEffect(() => {
@@ -95,6 +81,10 @@ export default function App() {
   // Simulated Alert State
   const [currentSimulatedAlert, setCurrentSimulatedAlert] = useState<SimulatedAlertEmail | null>(null);
   const [isSimulatedAlertModalOpen, setIsSimulatedAlertModalOpen] = useState(false);
+
+  // Cross-view filters
+  const [contractSupplierFilter, setContractSupplierFilter] = useState('');
+  const [supplierSearchFilter, setSupplierSearchFilter] = useState('');
 
   // Global keyboard shortcut (Ctrl+K or ⌘K)
   useEffect(() => {
@@ -127,9 +117,9 @@ export default function App() {
       code: newContractData.code || `CTR-2025-${Math.floor(100 + Math.random() * 900)}`,
       internalId: newContractData.internalId || `#${Math.floor(1000 + Math.random() * 9000)}-25`,
       title: newContractData.title || 'Novo Instrumento Contratual',
-      supplierId: newContractData.supplierId || suppliers[0].id,
-      supplierName: newContractData.supplierName || suppliers[0].razaoSocial,
-      supplierCnpj: newContractData.supplierCnpj || suppliers[0].cnpj,
+      supplierId: newContractData.supplierId || suppliers[0]?.id || 'sup-padrao',
+      supplierName: newContractData.supplierName || suppliers[0]?.razaoSocial || 'Fornecedor em Homologação',
+      supplierCnpj: newContractData.supplierCnpj || suppliers[0]?.cnpj || '00.000.000/0001-00',
       category: newContractData.category || 'Tecnologia / SaaS',
       startDate: newContractData.startDate || '2025-05-01',
       endDate: newContractData.endDate || '2026-05-01',
@@ -288,8 +278,21 @@ export default function App() {
   };
 
   const handleSelectSupplierContracts = (supplierId: string) => {
+    setContractSupplierFilter(supplierId);
+    setSelectedContract(null);
     setActiveTab('contratos');
-    // Contracts list will receive current state
+  };
+
+  const handleSelectSupplier = (supplierIdOrName: string) => {
+    setSelectedContract(null);
+    const found = suppliers.find(
+      (s) =>
+        s.id === supplierIdOrName ||
+        s.razaoSocial.toLowerCase() === supplierIdOrName.toLowerCase() ||
+        s.cnpj === supplierIdOrName
+    );
+    setSupplierSearchFilter(found ? found.razaoSocial : supplierIdOrName);
+    setActiveTab('fornecedores');
   };
 
   /**
@@ -515,16 +518,21 @@ export default function App() {
                   isDrawerOpen={isNewContractDrawerOpen}
                   setIsDrawerOpen={setIsNewContractDrawerOpen}
                   currentRole={currentRole}
+                  initialSupplierFilter={contractSupplierFilter}
+                  onClearInitialSupplierFilter={() => setContractSupplierFilter('')}
                 />
               )}
 
               {activeTab === 'fornecedores' && (
                 <SuppliersView
                   suppliers={suppliers}
+                  contracts={contracts}
                   onAddSupplier={handleAddSupplier}
                   onDeleteSupplier={handleDeleteSupplier}
                   onSelectSupplierContracts={handleSelectSupplierContracts}
                   currentRole={currentRole}
+                  initialSearchTerm={supplierSearchFilter}
+                  onClearInitialSearchTerm={() => setSupplierSearchFilter('')}
                 />
               )}
 
@@ -540,7 +548,7 @@ export default function App() {
                     }
                   }}
                   onSelectSupplier={(supplierId) => {
-                    setActiveTab('fornecedores');
+                    handleSelectSupplier(supplierId);
                   }}
                   currentRole={currentRole}
                   initialFilterResource={auditFilterResource}
@@ -556,6 +564,8 @@ export default function App() {
                   currentRole={currentRole}
                   onRoleChange={setCurrentRole}
                   onNavigateDashboard={() => setActiveTab('dashboard')}
+                  auditLogs={auditLogs}
+                  onAddAuditLog={addAuditLog}
                 />
               )}
 
@@ -569,7 +579,16 @@ export default function App() {
                   onSimulateAlert={handleSimulateAlert}
                   onNavigateTab={(tab) => {
                     setSelectedContract(null);
-                    setActiveTab(tab as any);
+                    if (
+                      tab === 'dashboard' ||
+                      tab === 'contratos' ||
+                      tab === 'fornecedores' ||
+                      tab === 'auditoria' ||
+                      tab === 'configuracoes' ||
+                      tab === 'perfil'
+                    ) {
+                      setActiveTab(tab);
+                    }
                   }}
                 />
               )}
@@ -588,7 +607,7 @@ export default function App() {
         suppliers={suppliers}
         onSelectContract={(contract) => setSelectedContract(contract)}
         onSelectSupplier={(supplierId) => {
-          setActiveTab('fornecedores');
+          handleSelectSupplier(supplierId);
         }}
       />
 

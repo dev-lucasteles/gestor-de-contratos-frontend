@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { ASSETS } from '../constants/assets';
 import { UserRole } from '../types';
+import { useClickOutside } from '../hooks/useClickOutside';
 
 interface SidebarProps {
   activeTab: string;
@@ -26,6 +27,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [showRoleMenu, setShowRoleMenu] = useState(false);
   const [logoError, setLogoError] = useState(false);
 
+  // References to detect click-outside on both desktop and mobile sidebar containers
+  const desktopRoleMenuRef = useRef<HTMLDivElement>(null);
+  const mobileRoleMenuRef = useRef<HTMLDivElement>(null);
+
+  // Reusable click-outside hook with ESC key & touch support
+  useClickOutside([desktopRoleMenuRef, mobileRoleMenuRef], () => setShowRoleMenu(false), {
+    enabled: showRoleMenu,
+    closeOnEsc: true,
+  });
+
+  // Close role menu if sidebar collapse state changes
+  useEffect(() => {
+    setShowRoleMenu(false);
+  }, [isCollapsed, isMobileOpen]);
+
   const roleLabels: Record<UserRole, { label: string; sub: string; badge: string; color: string }> = {
     administrador: { label: 'Administrador', sub: 'Acesso Total & Governança', badge: 'Controle Total', color: 'bg-purple-600' },
     editor: { label: 'Editor', sub: 'Minutas, Edição & Contratos', badge: 'Edição Ativa', color: 'bg-[#316bf3]' },
@@ -42,6 +58,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   ];
 
   const handleNavClick = (tabId: string) => {
+    setShowRoleMenu(false);
     setActiveTab(tabId);
     if (setIsMobileOpen) {
       setIsMobileOpen(false);
@@ -152,7 +169,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* Role Permission Selector at Bottom */}
-      <div className={`p-3 bg-black/20 border-t border-white/5 relative ${isCollapsed && !mobileView ? 'p-2' : 'p-3'}`}>
+      <div
+        ref={mobileView ? mobileRoleMenuRef : desktopRoleMenuRef}
+        className={`p-3 bg-black/20 border-t border-white/5 relative ${isCollapsed && !mobileView ? 'p-2' : 'p-3'}`}
+      >
         <div className="flex flex-col gap-1.5">
           {(!isCollapsed || mobileView) && (
             <div className="flex items-center justify-between px-1">
@@ -166,7 +186,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
           )}
 
           <div
+            id="sidebar-role-selector-button"
+            role="button"
+            tabIndex={0}
+            aria-haspopup="menu"
+            aria-expanded={showRoleMenu}
             onClick={() => setShowRoleMenu(!showRoleMenu)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                setShowRoleMenu(!showRoleMenu);
+              }
+            }}
             title={isCollapsed && !mobileView ? roleLabels[currentRole].label : undefined}
             className={`flex items-center rounded-xl bg-white/[0.07] hover:bg-white/[0.12] transition-colors cursor-pointer ${
               isCollapsed && !mobileView
@@ -199,6 +230,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {/* Role Dropdown */}
           {showRoleMenu && (
             <div
+              role="menu"
+              aria-labelledby="sidebar-role-selector-button"
               className={`absolute bottom-16 bg-[#1e293b] border border-white/10 rounded-xl shadow-2xl p-1.5 z-50 flex flex-col gap-1 ${
                 isCollapsed && !mobileView ? 'left-2 w-56' : 'left-3 right-3'
               }`}
@@ -209,6 +242,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               {(['administrador', 'editor', 'visualizador'] as UserRole[]).map((r) => (
                 <button
                   key={r}
+                  role="menuitem"
                   onClick={() => {
                     setCurrentRole(r);
                     setShowRoleMenu(false);

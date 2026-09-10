@@ -60,6 +60,9 @@ export function useContractExpirationMonitor({
       return;
     }
 
+    let newlyAddedNotifs: NotificationItem[] = [];
+    let detectedExpiring: Contract[] = [];
+
     setNotifications((prevNotifications) => {
       const result = checkContractsExpiration(
         contractsRef.current,
@@ -70,18 +73,21 @@ export function useContractExpirationMonitor({
         }
       );
 
-      setExpiringContracts(result.expiringContracts);
-      setLastCheckedAt(new Date());
-
-      // Trigger callback for any new notifications
-      if (result.newlyAdded.length > 0 && onNotificationSentRef.current) {
-        result.newlyAdded.forEach((notif) => {
-          onNotificationSentRef.current?.(notif);
-        });
-      }
+      newlyAddedNotifs = result.newlyAdded;
+      detectedExpiring = result.expiringContracts;
 
       return result.updatedNotifications;
     });
+
+    setExpiringContracts(detectedExpiring);
+    setLastCheckedAt(new Date());
+
+    // Trigger callback for any new notifications
+    if (newlyAddedNotifs.length > 0 && onNotificationSentRef.current) {
+      newlyAddedNotifs.forEach((notif) => {
+        onNotificationSentRef.current?.(notif);
+      });
+    }
   }, [setNotifications]);
 
   // Monitor a single contract (e.g. after user adds or updates one)
@@ -92,6 +98,7 @@ export function useContractExpirationMonitor({
       if (isContractExpiringSoon(contract, thresholdDaysRef.current)) {
         const days = calculateDaysRemaining(contract);
         const newNotif = buildExpirationNotification(contract, days);
+        let wasAdded = false;
 
         setNotifications((prev) => {
           const alreadyExists = prev.some(
@@ -101,9 +108,13 @@ export function useContractExpirationMonitor({
           );
           if (alreadyExists) return prev;
 
-          onNotificationSentRef.current?.(newNotif);
+          wasAdded = true;
           return [newNotif, ...prev];
         });
+
+        if (wasAdded && onNotificationSentRef.current) {
+          onNotificationSentRef.current(newNotif);
+        }
 
         // Update list of expiring contracts
         setExpiringContracts((prev) => {
