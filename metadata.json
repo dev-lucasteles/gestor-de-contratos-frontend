@@ -1,0 +1,6 @@
+{
+  "name": "Mais Contratos",
+  "description": "Plataforma de Gestão de Contratos (CLM), Governança de Fornecedores e Controle de Vencimentos do Grupo RioMais.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
